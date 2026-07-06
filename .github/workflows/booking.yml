@@ -1,19 +1,21 @@
-name: Worksite Booking
+name: Worksite Booking Bot
 
 on:
   workflow_dispatch:
 
   schedule:
-    # Jam 23:00 UTC = 06:00 WIB
-    - cron: "0 23 * * 0-4"
+    # Senin - Jumat jam 08:30 WIB (01:30 UTC)
+    - cron: "30 1 * * 1-5"
 
 jobs:
   booking:
+
     runs-on: ubuntu-latest
 
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
+
       - name: Checkout Repository
         uses: actions/checkout@v4
 
@@ -29,7 +31,8 @@ jobs:
 
       - name: Install Playwright Browser
         run: |
-          playwright install chromium
+          playwright install --with-deps chromium
 
       - name: Run Booking Bot
-        run: python booking.py
+        run: |
+          python booking.py
