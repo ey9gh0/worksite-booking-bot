@@ -6,13 +6,13 @@ URL = "https://script.google.com/a/macros/banksinarmas.com/s/AKfycbyGVQZaMoU4Q4H
 # DATA BOOKING
 # ==============================
 
-NIK = "12345678"
-NAMA = "Nama Kamu"
-DIVISI = "IT"
-EMAIL = "email@banksinarmas.com"
+NIK = "025603"
+NAMA = "Erwin Yonathan"
+DIVISI = "Product Management Division Head (Funding, Wealth, Treasury & Corporate)"
+EMAIL = "erwin.yonathan@banksinarmas.com"
 
-WORKSITE = "L'Avenue"
-TANGGAL = "Jul 22, 2025"
+WORKSITE = "GOP 1"
+TANGGAL = "Jul 7, 2026"
 
 # ==============================
 
