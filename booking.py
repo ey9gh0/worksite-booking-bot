@@ -3,9 +3,9 @@ import time
 
 URL = "https://script.google.com/a/macros/banksinarmas.com/s/AKfycbyGVQZaMoU4Q4HOS51V2Tmt_nnO2UNu4QCfUbk6EWuGVYtamrhMMLoUv-kI1oGHU9-0Nw/exec?v=bookWorkSite"
 
-# =========================
+# ==========================
 # DATA
-# =========================
+# ==========================
 NIK = "12345678"
 NAMA = "Nama Kamu"
 DIVISI = "IT"
@@ -16,9 +16,7 @@ TANGGAL = "22/07/2025"
 
 with sync_playwright() as p:
 
-    browser = p.chromium.launch(
-        headless=True
-    )
+    browser = p.chromium.launch(headless=True)
 
     page = browser.new_page()
 
@@ -27,6 +25,10 @@ with sync_playwright() as p:
 
     frame = page.frames[2]
 
+    # ==========================
+    # Isi data
+    # ==========================
+
     print("Mengisi data...")
 
     frame.locator("#nik").fill(NIK)
@@ -34,70 +36,83 @@ with sync_playwright() as p:
     frame.locator("#divisi").fill(DIVISI)
     frame.locator("#email").fill(EMAIL)
 
-    # =========================
-    # WORKSITE
-    # =========================
+    # ==========================
+    # Work Site
+    # ==========================
+
+    print("Memilih Work Site...")
+
+    frame.locator("#workSite").select_option(
+        label=WORKSITE,
+        force=True
+    )
+
+    # ==========================
+    # Cek DatePicker
+    # ==========================
+
+    print("\n=== DATEPICKER INFO ===")
 
     try:
-        print("Memilih worksite dengan select_option...")
 
-        frame.locator("#workSite").select_option(
-            label=WORKSITE,
-            force=True
-        )
+        info = frame.evaluate("""
+        () => {
+            const el = document.querySelector('#meetingDate');
+
+            if (!window.M)
+                return "Materialize tidak ditemukan";
+
+            const inst = M.Datepicker.getInstance(el);
+
+            if (!inst)
+                return "Datepicker belum diinisialisasi";
+
+            return {
+                format: inst.options.format,
+                minDate: inst.options.minDate,
+                maxDate: inst.options.maxDate
+            };
+        }
+        """)
+
+        print(info)
 
     except Exception as e:
-
-        print("select_option gagal")
         print(e)
 
-        print("Menggunakan JavaScript...")
+    # ==========================
+    # Isi tanggal
+    # ==========================
 
-        frame.locator("#workSite").evaluate(
-            """(el, value) => {
-                el.value = value;
+    print("\nMengisi tanggal...")
 
-                el.dispatchEvent(new Event('change', {
-                    bubbles: true
-                }));
-
-                if (typeof checkRoom === 'function'){
-                    checkRoom();
-                }
-            }""",
-            WORKSITE
-        )
-
-    # =========================
-    # TANGGAL
-    # =========================
-
+    frame.locator("#meetingDate").click()
     frame.locator("#meetingDate").fill(TANGGAL)
-    frame.locator("#meetingDate").dispatch_event("change")
+    frame.locator("#meetingDate").press("Enter")
 
+    frame.locator("#meetingEnd").click()
     frame.locator("#meetingEnd").fill(TANGGAL)
+    frame.locator("#meetingEnd").press("Enter")
+
+    frame.locator("#meetingDate").dispatch_event("change")
     frame.locator("#meetingEnd").dispatch_event("change")
 
-    print("Menunggu checkRoom()...")
+    time.sleep(3)
 
-    time.sleep(5)
+    print("\n=== VALUE YANG TERSIMPAN ===")
+
+    print("Meeting Date :", frame.locator("#meetingDate").input_value())
+    print("Meeting End  :", frame.locator("#meetingEnd").input_value())
+
+    # ==========================
+    # Status
+    # ==========================
+
+    time.sleep(3)
 
     status = frame.locator("#statusRuangan").inner_text()
 
-    print("===========================")
+    print("\n=== STATUS ===")
     print(status)
-    print("===========================")
-
-    if "available" in status.lower():
-        print("Ruangan tersedia")
-
-        frame.locator("#submit-reservation-detail").click()
-
-        print("Reservasi berhasil dikirim")
-
-    else:
-        print("Ruangan belum tersedia")
-
-    time.sleep(3)
 
     browser.close()
