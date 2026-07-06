@@ -1,73 +1,54 @@
 from playwright.sync_api import sync_playwright
-from datetime import datetime, timedelta
 import os
 import sys
 
 URL = "https://script.google.com/a/macros/banksinarmas.com/s/AKfycbyGVQZaMoU4Q4HOS51V2Tmt_nnO2UNu4QCfUbk6EWuGVYtamrhMMLoUv-kI1oGHU9-0Nw/exec?v=bookWorkSite"
 
-NIK = os.getenv("NIK")
-NAMA = os.getenv("NAMA")
-DIVISI = os.getenv("DIVISI")
-EMAIL = os.getenv("EMAIL")
-
-
-def next_workday():
-    d = datetime.now() + timedelta(days=1)
-
-    while d.weekday() >= 5:   # Sabtu=5, Minggu=6
-        d += timedelta(days=1)
-
-    return d.strftime("%d/%m/%Y")
-
-
-BOOKING_DATE = next_workday()
-
-
-def run():
+def main():
     with sync_playwright() as p:
-
         browser = p.chromium.launch(
             headless=True
         )
 
-        page = browser.new_page()
+        page = browser.new_page(
+            viewport={"width": 1920, "height": 1080}
+        )
 
-        print("Opening page...")
-        page.goto(URL, wait_until="networkidle")
+        print("Opening website...")
+        page.goto(URL, wait_until="networkidle", timeout=120000)
 
-        page.wait_for_timeout(5000)
+        page.screenshot(path="page.png", full_page=True)
 
-        # masuk iframe
-        frame = page.frame_locator("iframe")
+        print("=" * 50)
+        print("TITLE :", page.title())
+        print("URL   :", page.url)
+        print("=" * 50)
 
-        print("Fill form...")
+        frames = page.frames
 
-        frame.locator("#nik").fill(NIK)
-        frame.locator("#nama").fill(NAMA)
-        frame.locator("#divisi").fill(DIVISI)
-        frame.locator("#email").fill(EMAIL)
+        print(f"Total Frames : {len(frames)}")
 
-        frame.locator("#workSite").select_option(label="GOP 1")
+        for i, frame in enumerate(frames):
+            print("-" * 50)
+            print(f"Frame {i}")
+            print(frame.url)
 
-        # tanggal (sementara)
-        frame.locator("#meetingDate").fill(BOOKING_DATE)
-        frame.locator("#meetingEnd").fill(BOOKING_DATE)
+            try:
+                ids = frame.locator("[id]").evaluate_all(
+                    """els => els.map(e => e.id)"""
+                )
 
-        print("Submit booking...")
+                print(ids)
 
-        frame.locator("#submit-reservation-detail").click()
-
-        page.wait_for_timeout(8000)
-
-        print(page.content())
+            except Exception as e:
+                print(e)
 
         browser.close()
 
 
 if __name__ == "__main__":
     try:
-        run()
-        sys.exit(0)
+        main()
     except Exception as e:
         print(e)
         sys.exit(1)
