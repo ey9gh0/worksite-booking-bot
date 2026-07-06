@@ -1,33 +1,37 @@
 from playwright.sync_api import sync_playwright
-import time
 
 URL = "https://script.google.com/a/macros/banksinarmas.com/s/AKfycbyGVQZaMoU4Q4HOS51V2Tmt_nnO2UNu4QCfUbk6EWuGVYtamrhMMLoUv-kI1oGHU9-0Nw/exec?v=bookWorkSite"
 
-# ==========================
-# DATA
-# ==========================
+# ==============================
+# DATA BOOKING
+# ==============================
+
 NIK = "12345678"
 NAMA = "Nama Kamu"
 DIVISI = "IT"
 EMAIL = "email@banksinarmas.com"
 
-WORKSITE = "L'Avenue"      # atau GOP 1
-TANGGAL = "22/07/2025"
+WORKSITE = "L'Avenue"
+TANGGAL = "Jul 22, 2025"
+
+# ==============================
 
 with sync_playwright() as p:
 
-    browser = p.chromium.launch(headless=True)
+    browser = p.chromium.launch(
+        headless=True
+    )
 
     page = browser.new_page()
 
     print("Membuka website...")
+
     page.goto(URL, wait_until="networkidle")
 
-    frame = page.frames[2]
+    # tunggu iframe muncul
+    page.wait_for_timeout(3000)
 
-    # ==========================
-    # Isi data
-    # ==========================
+    frame = page.frames[2]
 
     print("Mengisi data...")
 
@@ -36,83 +40,155 @@ with sync_playwright() as p:
     frame.locator("#divisi").fill(DIVISI)
     frame.locator("#email").fill(EMAIL)
 
-    # ==========================
-    # Work Site
-    # ==========================
+    # =====================================
+    # WORKSITE
+    # =====================================
 
     print("Memilih Work Site...")
 
-    frame.locator("#workSite").select_option(
-        label=WORKSITE,
-        force=True
+    frame.evaluate(
+        """
+        (site)=>{
+
+            const select=document.querySelector("#workSite");
+
+            for(const opt of select.options){
+
+                if(opt.text.trim()==site){
+
+                    select.value=opt.value || opt.text;
+
+                    break;
+
+                }
+
+            }
+
+            select.dispatchEvent(new Event("change",{bubbles:true}));
+
+            if(window.M){
+
+                const inst=M.FormSelect.getInstance(select);
+
+                if(inst){
+
+                    inst.destroy();
+
+                }
+
+                M.FormSelect.init(select);
+
+            }
+
+        }
+        """,
+        WORKSITE,
     )
 
-    # ==========================
-    # Cek DatePicker
-    # ==========================
+    page.wait_for_timeout(1000)
+
+    # =====================================
+    # DATEPICKER INFO
+    # =====================================
 
     print("\n=== DATEPICKER INFO ===")
 
     try:
 
-        info = frame.evaluate("""
-        () => {
-            const el = document.querySelector('#meetingDate');
+        info = frame.evaluate(
+            """
+            () => {
 
-            if (!window.M)
-                return "Materialize tidak ditemukan";
+                const inst = M.Datepicker.getInstance(
+                    document.querySelector("#meetingDate")
+                );
 
-            const inst = M.Datepicker.getInstance(el);
+                if(!inst)
+                    return "Datepicker belum siap";
 
-            if (!inst)
-                return "Datepicker belum diinisialisasi";
+                return {
+                    format: inst.options.format,
+                    minDate: inst.options.minDate,
+                    maxDate: inst.options.maxDate
+                };
 
-            return {
-                format: inst.options.format,
-                minDate: inst.options.minDate,
-                maxDate: inst.options.maxDate
-            };
-        }
-        """)
+            }
+            """
+        )
 
         print(info)
 
     except Exception as e:
+
         print(e)
 
-    # ==========================
-    # Isi tanggal
-    # ==========================
+    # =====================================
+    # ISI TANGGAL
+    # =====================================
 
     print("\nMengisi tanggal...")
 
-    frame.locator("#meetingDate").click()
-    frame.locator("#meetingDate").fill(TANGGAL)
-    frame.locator("#meetingDate").press("Enter")
+    frame.evaluate(
+        """
+        (tgl)=>{
 
-    frame.locator("#meetingEnd").click()
-    frame.locator("#meetingEnd").fill(TANGGAL)
-    frame.locator("#meetingEnd").press("Enter")
+            const start=document.querySelector("#meetingDate");
+            const end=document.querySelector("#meetingEnd");
 
-    frame.locator("#meetingDate").dispatch_event("change")
-    frame.locator("#meetingEnd").dispatch_event("change")
+            start.value=tgl;
+            end.value=tgl;
 
-    time.sleep(3)
+            start.dispatchEvent(new Event("input",{bubbles:true}));
+            end.dispatchEvent(new Event("input",{bubbles:true}));
 
-    print("\n=== VALUE YANG TERSIMPAN ===")
+            start.dispatchEvent(new Event("change",{bubbles:true}));
+            end.dispatchEvent(new Event("change",{bubbles:true}));
 
-    print("Meeting Date :", frame.locator("#meetingDate").input_value())
-    print("Meeting End  :", frame.locator("#meetingEnd").input_value())
+            if(typeof checkRoom==="function"){
+                checkRoom();
+            }
 
-    # ==========================
-    # Status
-    # ==========================
+        }
+        """,
+        TANGGAL,
+    )
 
-    time.sleep(3)
+    page.wait_for_timeout(5000)
+
+    print("\n=== VALUE ===")
+
+    print(
+        "Meeting Date :",
+        frame.locator("#meetingDate").input_value()
+    )
+
+    print(
+        "Meeting End  :",
+        frame.locator("#meetingEnd").input_value()
+    )
+
+    # =====================================
+    # STATUS
+    # =====================================
 
     status = frame.locator("#statusRuangan").inner_text()
 
-    print("\n=== STATUS ===")
+    print("\n============================")
     print(status)
+    print("============================")
+
+    if "available" in status.lower():
+
+        print("Ruangan tersedia.")
+
+        frame.locator("#submit-reservation-detail").click(force=True)
+
+        page.wait_for_timeout(5000)
+
+        print("Booking selesai.")
+
+    else:
+
+        print("Ruangan belum tersedia.")
 
     browser.close()
