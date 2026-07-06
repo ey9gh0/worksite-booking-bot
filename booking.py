@@ -3,14 +3,16 @@ import time
 
 URL = "https://script.google.com/a/macros/banksinarmas.com/s/AKfycbyGVQZaMoU4Q4HOS51V2Tmt_nnO2UNu4QCfUbk6EWuGVYtamrhMMLoUv-kI1oGHU9-0Nw/exec?v=bookWorkSite"
 
+# =========================
+# DATA
+# =========================
 NIK = "12345678"
 NAMA = "Nama Kamu"
 DIVISI = "IT"
 EMAIL = "email@banksinarmas.com"
 
-WORKSITE = "L'Avenue"
+WORKSITE = "L'Avenue"      # atau GOP 1
 TANGGAL = "22/07/2025"
-
 
 with sync_playwright() as p:
 
@@ -32,34 +34,67 @@ with sync_playwright() as p:
     frame.locator("#divisi").fill(DIVISI)
     frame.locator("#email").fill(EMAIL)
 
-    # pilih worksite
-    frame.locator("#workSite").select_option(label=WORKSITE)
+    # =========================
+    # WORKSITE
+    # =========================
 
-    # isi tanggal mulai
+    try:
+        print("Memilih worksite dengan select_option...")
+
+        frame.locator("#workSite").select_option(
+            label=WORKSITE,
+            force=True
+        )
+
+    except Exception as e:
+
+        print("select_option gagal")
+        print(e)
+
+        print("Menggunakan JavaScript...")
+
+        frame.locator("#workSite").evaluate(
+            """(el, value) => {
+                el.value = value;
+
+                el.dispatchEvent(new Event('change', {
+                    bubbles: true
+                }));
+
+                if (typeof checkRoom === 'function'){
+                    checkRoom();
+                }
+            }""",
+            WORKSITE
+        )
+
+    # =========================
+    # TANGGAL
+    # =========================
+
     frame.locator("#meetingDate").fill(TANGGAL)
-    frame.locator("#meetingDate").press("Tab")
-
-    # isi tanggal selesai
-    frame.locator("#meetingEnd").fill(TANGGAL)
-    frame.locator("#meetingEnd").press("Tab")
-
-    # trigger onchange
     frame.locator("#meetingDate").dispatch_event("change")
+
+    frame.locator("#meetingEnd").fill(TANGGAL)
     frame.locator("#meetingEnd").dispatch_event("change")
 
-    print("Menunggu pengecekan ruangan...")
+    print("Menunggu checkRoom()...")
 
     time.sleep(5)
 
     status = frame.locator("#statusRuangan").inner_text()
 
-    print("STATUS:")
+    print("===========================")
     print(status)
+    print("===========================")
 
-    if "Available" in status or "available" in status:
+    if "available" in status.lower():
         print("Ruangan tersedia")
+
         frame.locator("#submit-reservation-detail").click()
-        print("Reservasi dikirim")
+
+        print("Reservasi berhasil dikirim")
+
     else:
         print("Ruangan belum tersedia")
 
