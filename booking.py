@@ -1,8 +1,24 @@
 from playwright.sync_api import sync_playwright, expect
 from openpyxl import load_workbook
 from datetime import datetime, timedelta
+import random
+import time
 
 URL = "https://script.google.com/a/macros/banksinarmas.com/s/AKfycbyGVQZaMoU4Q4HOS51V2Tmt_nnO2UNu4QCfUbk6EWuGVYtamrhMMLoUv-kI1oGHU9-0Nw/exec?v=bookWorkSite"
+
+
+# =====================================================
+# RANDOM DELAY (HUMAN-LIKE)
+# =====================================================
+
+def random_delay(min_sec=2, max_sec=7):
+    delay = random.uniform(min_sec, max_sec)
+    print(f"⏳ Delay {delay:.2f} seconds...")
+    time.sleep(delay)
+
+
+def short_delay(min_ms=500, max_ms=1500):
+    time.sleep(random.uniform(min_ms, max_ms) / 1000)
 
 
 # =====================================================
@@ -70,12 +86,15 @@ def get_next_working_day(holidays):
     return target.strftime("%b %d, %Y")
 
 
+# =====================================================
+# MAIN DATA
+# =====================================================
+
 booking_data = load_booking_data()
 holiday_list = load_holiday()
-
 BOOKING_DATE = get_next_working_day(holiday_list)
 
-print(f"\nBooking Date : {BOOKING_DATE}\n")
+print(f"\n📅 Booking Date : {BOOKING_DATE}\n")
 
 results = []
 
@@ -88,18 +107,23 @@ with sync_playwright() as p:
 
     browser = p.chromium.launch(headless=True)
 
-    for user in booking_data:
+    for idx, user in enumerate(booking_data, start=1):
 
-        print("=" * 60)
-        print(f"Booking : {user['NAMA']}")
+        print("\n" + "=" * 60)
+        print(f"[{idx}/{len(booking_data)}] Booking : {user['NAMA']}")
+
+        # delay antar user (biar tidak burst)
+        random_delay(3, 10)
 
         page = browser.new_page()
 
         page.goto(URL, wait_until="networkidle")
+        page.wait_for_timeout(random.randint(2000, 4000))
 
-        page.wait_for_timeout(3000)
+        # =================================================
+        # FIND FRAME
+        # =================================================
 
-        # Cari iframe yang berisi form
         frame = None
         for f in page.frames:
             if f.locator("#nik").count() > 0:
@@ -107,7 +131,7 @@ with sync_playwright() as p:
                 break
 
         if frame is None:
-            print("Form booking tidak ditemukan.")
+            print("❌ Form booking tidak ditemukan.")
             results.append({
                 "name": user["NAMA"],
                 "status": "FAILED (Frame)"
@@ -115,22 +139,29 @@ with sync_playwright() as p:
             page.close()
             continue
 
-        # ============================
-        # INPUT
-        # ============================
+        # =================================================
+        # INPUT FORM
+        # =================================================
 
         frame.locator("#nik").fill(user["NIK"])
+        short_delay()
+
         frame.locator("#nama").fill(user["NAMA"])
+        short_delay()
+
         frame.locator("#divisi").fill(user["DIVISI"])
+        short_delay()
+
         frame.locator("#email").fill(user["EMAIL"])
+        short_delay()
 
         expect(frame.locator("#nik")).to_have_value(user["NIK"])
 
         print("✔ Form berhasil diisi")
 
-        # ============================
+        # =================================================
         # WORKSITE
-        # ============================
+        # =================================================
 
         frame.evaluate(
             """
@@ -162,11 +193,11 @@ with sync_playwright() as p:
             user["WORKSITE"]
         )
 
-        page.wait_for_timeout(1000)
+        page.wait_for_timeout(random.randint(1000, 2500))
 
-        # ============================
-        # DATE
-        # ============================
+        # =================================================
+        # DATE SET
+        # =================================================
 
         frame.evaluate(
             """
@@ -188,25 +219,36 @@ with sync_playwright() as p:
             BOOKING_DATE
         )
 
-        page.wait_for_timeout(4000)
+        page.wait_for_timeout(random.randint(3000, 6000))
+
+        # =================================================
+        # CHECK STATUS
+        # =================================================
 
         status = frame.locator("#statusRuangan").inner_text()
+        print(f"Status: {status}")
 
-        print(status)
+        page.wait_for_timeout(random.randint(1000, 2000))
+
+        # =================================================
+        # BOOKING LOGIC
+        # =================================================
 
         if "available" in status.lower():
 
             print("✔ Room Available")
 
             def handle_dialog(dialog):
-                print(dialog.message)
+                print("ALERT:", dialog.message)
                 dialog.accept()
 
             page.on("dialog", handle_dialog)
 
+            random_delay(2, 5)
+
             frame.locator("#submit-reservation-detail").click(force=True)
 
-            page.wait_for_timeout(5000)
+            page.wait_for_timeout(random.randint(4000, 7000))
 
             print("✔ Booking Success")
 
@@ -226,26 +268,23 @@ with sync_playwright() as p:
 
         page.close()
 
+
     browser.close()
 
 
 # =====================================================
-# SUMMARY
+# SUMMARY REPORT
 # =====================================================
 
-print("\n")
+print("\n" + "=" * 60)
+print("📊 BOOKING SUMMARY")
 print("=" * 60)
-print("BOOKING SUMMARY")
-print("=" * 60)
-
-print(f"Booking Date : {BOOKING_DATE}\n")
 
 success = 0
 failed = 0
 
 for r in results:
-
-    print(f"{r['status']:<10} {r['name']}")
+    print(f"{r['status']:<12} {r['name']}")
 
     if r["status"] == "SUCCESS":
         success += 1
@@ -253,9 +292,7 @@ for r in results:
         failed += 1
 
 print("\n" + "-" * 60)
-
 print(f"Total   : {len(results)}")
 print(f"Success : {success}")
 print(f"Failed  : {failed}")
-
 print("=" * 60)
