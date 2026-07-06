@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 
 URL = "https://script.google.com/a/macros/banksinarmas.com/s/AKfycbyGVQZaMoU4Q4HOS51V2Tmt_nnO2UNu4QCfUbk6EWuGVYtamrhMMLoUv-kI1oGHU9-0Nw/exec?v=bookWorkSite"
 
+
 # =====================================================
 # LOAD BOOKING DATA
 # =====================================================
@@ -13,9 +14,6 @@ def load_booking_data():
     ws = wb.active
 
     data = []
-
-    # Header harus:
-    # NIK | NAMA | DIVISI | EMAIL | WORKSITE
 
     for row in ws.iter_rows(min_row=2, values_only=True):
 
@@ -38,7 +36,6 @@ def load_booking_data():
 # =====================================================
 
 def load_holiday():
-
     wb = load_workbook("holiday.xlsx")
     ws = wb.active
 
@@ -51,7 +48,6 @@ def load_holiday():
 
         if isinstance(row[0], datetime):
             holidays.add(row[0].date())
-
         else:
             holidays.add(
                 datetime.strptime(str(row[0]), "%Y-%m-%d").date()
@@ -75,12 +71,13 @@ def get_next_working_day(holidays):
 
 
 booking_data = load_booking_data()
-
 holiday_list = load_holiday()
 
 BOOKING_DATE = get_next_working_day(holiday_list)
 
-print(f"Booking Date : {BOOKING_DATE}")
+print(f"\nBooking Date : {BOOKING_DATE}\n")
+
+results = []
 
 
 # =====================================================
@@ -102,11 +99,25 @@ with sync_playwright() as p:
 
         page.wait_for_timeout(3000)
 
-        frame = page.frames[2]
+        # Cari iframe yang berisi form
+        frame = None
+        for f in page.frames:
+            if f.locator("#nik").count() > 0:
+                frame = f
+                break
 
-        # ============================================
+        if frame is None:
+            print("Form booking tidak ditemukan.")
+            results.append({
+                "name": user["NAMA"],
+                "status": "FAILED (Frame)"
+            })
+            page.close()
+            continue
+
+        # ============================
         # INPUT
-        # ============================================
+        # ============================
 
         frame.locator("#nik").fill(user["NIK"])
         frame.locator("#nama").fill(user["NAMA"])
@@ -114,15 +125,12 @@ with sync_playwright() as p:
         frame.locator("#email").fill(user["EMAIL"])
 
         expect(frame.locator("#nik")).to_have_value(user["NIK"])
-        expect(frame.locator("#nama")).to_have_value(user["NAMA"])
-        expect(frame.locator("#divisi")).to_have_value(user["DIVISI"])
-        expect(frame.locator("#email")).to_have_value(user["EMAIL"])
 
-        print("Form berhasil diisi.")
+        print("✔ Form berhasil diisi")
 
-        # ============================================
+        # ============================
         # WORKSITE
-        # ============================================
+        # ============================
 
         frame.evaluate(
             """
@@ -144,7 +152,9 @@ with sync_playwright() as p:
                 select.dispatchEvent(new Event("change",{bubbles:true}));
 
                 if(window.M){
+
                     M.FormSelect.init(select);
+
                 }
 
             }
@@ -154,9 +164,9 @@ with sync_playwright() as p:
 
         page.wait_for_timeout(1000)
 
-        # ============================================
+        # ============================
         # DATE
-        # ============================================
+        # ============================
 
         frame.evaluate(
             """
@@ -180,22 +190,15 @@ with sync_playwright() as p:
 
         page.wait_for_timeout(4000)
 
-        print("Meeting Date :", frame.locator("#meetingDate").input_value())
-
         status = frame.locator("#statusRuangan").inner_text()
 
         print(status)
 
-        # ============================================
-        # SUBMIT
-        # ============================================
-
         if "available" in status.lower():
 
-            print("Ruangan tersedia.")
+            print("✔ Room Available")
 
             def handle_dialog(dialog):
-                print("========== ALERT ==========")
                 print(dialog.message)
                 dialog.accept()
 
@@ -205,15 +208,54 @@ with sync_playwright() as p:
 
             page.wait_for_timeout(5000)
 
-            print(f"SUCCESS : {user['NAMA']}")
+            print("✔ Booking Success")
+
+            results.append({
+                "name": user["NAMA"],
+                "status": "SUCCESS"
+            })
 
         else:
 
-            print(f"FAILED : {user['NAMA']}")
-            print("Ruangan belum tersedia.")
+            print("✖ Room Not Available")
+
+            results.append({
+                "name": user["NAMA"],
+                "status": "FAILED"
+            })
 
         page.close()
 
     browser.close()
 
-print("Selesai.")
+
+# =====================================================
+# SUMMARY
+# =====================================================
+
+print("\n")
+print("=" * 60)
+print("BOOKING SUMMARY")
+print("=" * 60)
+
+print(f"Booking Date : {BOOKING_DATE}\n")
+
+success = 0
+failed = 0
+
+for r in results:
+
+    print(f"{r['status']:<10} {r['name']}")
+
+    if r["status"] == "SUCCESS":
+        success += 1
+    else:
+        failed += 1
+
+print("\n" + "-" * 60)
+
+print(f"Total   : {len(results)}")
+print(f"Success : {success}")
+print(f"Failed  : {failed}")
+
+print("=" * 60)
