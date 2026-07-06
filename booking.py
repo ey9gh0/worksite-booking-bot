@@ -1,56 +1,100 @@
 from playwright.sync_api import sync_playwright, expect
-import pandas as pd
+from openpyxl import load_workbook
 from datetime import datetime, timedelta
 
 URL = "https://script.google.com/a/macros/banksinarmas.com/s/AKfycbyGVQZaMoU4Q4HOS51V2Tmt_nnO2UNu4QCfUbk6EWuGVYtamrhMMLoUv-kI1oGHU9-0Nw/exec?v=bookWorkSite"
 
+# =====================================================
+# LOAD BOOKING DATA
+# =====================================================
+
+def load_booking_data():
+    wb = load_workbook("booking.xlsx")
+    ws = wb.active
+
+    data = []
+
+    # Header harus:
+    # NIK | NAMA | DIVISI | EMAIL | WORKSITE
+
+    for row in ws.iter_rows(min_row=2, values_only=True):
+
+        if all(cell is None for cell in row):
+            continue
+
+        data.append({
+            "NIK": str(row[0]).strip(),
+            "NAMA": str(row[1]).strip(),
+            "DIVISI": str(row[2]).strip(),
+            "EMAIL": str(row[3]).strip(),
+            "WORKSITE": str(row[4]).strip()
+        })
+
+    return data
+
 
 # =====================================================
-# LOAD DATA
+# LOAD HOLIDAY
 # =====================================================
 
-booking_df = pd.read_excel("booking.xlsx")
+def load_holiday():
 
-holiday_df = pd.read_excel("holiday.xlsx")
+    wb = load_workbook("holiday.xlsx")
+    ws = wb.active
 
-holiday_list = set(
-    pd.to_datetime(holiday_df["DATE"]).dt.date
-)
+    holidays = set()
+
+    for row in ws.iter_rows(min_row=2, values_only=True):
+
+        if row[0] is None:
+            continue
+
+        if isinstance(row[0], datetime):
+            holidays.add(row[0].date())
+
+        else:
+            holidays.add(
+                datetime.strptime(str(row[0]), "%Y-%m-%d").date()
+            )
+
+    return holidays
 
 
 # =====================================================
 # NEXT WORKING DAY
 # =====================================================
 
-def get_next_working_day():
+def get_next_working_day(holidays):
 
-    today = datetime.today().date()
+    target = datetime.today().date() + timedelta(days=1)
 
-    target = today + timedelta(days=1)
-
-    while target.weekday() >= 5 or target in holiday_list:
+    while target.weekday() >= 5 or target in holidays:
         target += timedelta(days=1)
 
     return target.strftime("%b %d, %Y")
 
 
-BOOKING_DATE = get_next_working_day()
+booking_data = load_booking_data()
 
-print("Booking Date :", BOOKING_DATE)
+holiday_list = load_holiday()
+
+BOOKING_DATE = get_next_working_day(holiday_list)
+
+print(f"Booking Date : {BOOKING_DATE}")
 
 
 # =====================================================
-# LOOP DATA
+# PLAYWRIGHT
 # =====================================================
 
 with sync_playwright() as p:
 
     browser = p.chromium.launch(headless=True)
 
-    for _, row in booking_df.iterrows():
+    for user in booking_data:
 
-        print("=" * 50)
-        print("Booking :", row["NAMA"])
+        print("=" * 60)
+        print(f"Booking : {user['NAMA']}")
 
         page = browser.new_page()
 
@@ -60,23 +104,25 @@ with sync_playwright() as p:
 
         frame = page.frames[2]
 
-        # =====================================
+        # ============================================
         # INPUT
-        # =====================================
+        # ============================================
 
-        frame.locator("#nik").fill(str(row["NIK"]))
+        frame.locator("#nik").fill(user["NIK"])
+        frame.locator("#nama").fill(user["NAMA"])
+        frame.locator("#divisi").fill(user["DIVISI"])
+        frame.locator("#email").fill(user["EMAIL"])
 
-        frame.locator("#nama").fill(row["NAMA"])
+        expect(frame.locator("#nik")).to_have_value(user["NIK"])
+        expect(frame.locator("#nama")).to_have_value(user["NAMA"])
+        expect(frame.locator("#divisi")).to_have_value(user["DIVISI"])
+        expect(frame.locator("#email")).to_have_value(user["EMAIL"])
 
-        frame.locator("#divisi").fill(row["DIVISI"])
+        print("Form berhasil diisi.")
 
-        frame.locator("#email").fill(row["EMAIL"])
-
-        expect(frame.locator("#nik")).to_have_value(str(row["NIK"]))
-
-        # =====================================
+        # ============================================
         # WORKSITE
-        # =====================================
+        # ============================================
 
         frame.evaluate(
             """
@@ -90,6 +136,7 @@ with sync_playwright() as p:
 
                         select.value=opt.value || opt.text;
                         break;
+
                     }
 
                 }
@@ -102,14 +149,14 @@ with sync_playwright() as p:
 
             }
             """,
-            row["WORKSITE"]
+            user["WORKSITE"]
         )
 
         page.wait_for_timeout(1000)
 
-        # =====================================
+        # ============================================
         # DATE
-        # =====================================
+        # ============================================
 
         frame.evaluate(
             """
@@ -133,15 +180,22 @@ with sync_playwright() as p:
 
         page.wait_for_timeout(4000)
 
+        print("Meeting Date :", frame.locator("#meetingDate").input_value())
+
         status = frame.locator("#statusRuangan").inner_text()
 
         print(status)
 
+        # ============================================
+        # SUBMIT
+        # ============================================
+
         if "available" in status.lower():
 
-            print("Room Available")
+            print("Ruangan tersedia.")
 
             def handle_dialog(dialog):
+                print("========== ALERT ==========")
                 print(dialog.message)
                 dialog.accept()
 
@@ -151,12 +205,15 @@ with sync_playwright() as p:
 
             page.wait_for_timeout(5000)
 
-            print("SUCCESS :", row["NAMA"])
+            print(f"SUCCESS : {user['NAMA']}")
 
         else:
 
-            print("FAILED :", row["NAMA"])
+            print(f"FAILED : {user['NAMA']}")
+            print("Ruangan belum tersedia.")
 
         page.close()
 
     browser.close()
+
+print("Selesai.")
