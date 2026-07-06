@@ -3,24 +3,33 @@ name: Worksite Booking
 on:
   workflow_dispatch:
 
+  schedule:
+    # Jam 23:00 UTC = 06:00 WIB
+    - cron: "0 23 * * 0-4"
+
 jobs:
   booking:
     runs-on: ubuntu-latest
 
-    steps:
-      - uses: actions/checkout@v4
+    timeout-minutes: 10
 
-      - uses: actions/setup-python@v5
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Install Playwright Browser
-        run: playwright install chromium
+        run: |
+          playwright install chromium
 
-      - name: Run Bot
+      - name: Run Booking Bot
         run: python booking.py
