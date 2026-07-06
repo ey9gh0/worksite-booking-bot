@@ -4,7 +4,6 @@ URL = "https://script.google.com/a/macros/banksinarmas.com/s/AKfycbyGVQZaMoU4Q4H
 
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
-
     page = browser.new_page()
 
     page.goto(URL, wait_until="networkidle")
@@ -12,9 +11,18 @@ with sync_playwright() as p:
     frame = page.frames[2]
 
     print("========== WORKSITE ==========")
-    print(frame.locator("#workSite").inner_html())
+    print(frame.locator("#workSite").evaluate("e => e.outerHTML"))
 
-    print("========== MEETING DATE ==========")
+    print("\n========== MEETING DATE ==========")
     print(frame.locator("#meetingDate").evaluate("e => e.outerHTML"))
+
+    print("\n========== MEETING END ==========")
+    print(frame.locator("#meetingEnd").evaluate("e => e.outerHTML"))
+
+    print("\n========== STATUS ==========")
+    print(frame.locator("#statusRuangan").evaluate("e => e.outerHTML"))
+
+    print("\n========== SUBMIT ==========")
+    print(frame.locator("#submit-reservation-detail").evaluate("e => e.outerHTML"))
 
     browser.close()
