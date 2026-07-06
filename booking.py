@@ -18,17 +18,24 @@ TANGGAL = "Jul 22, 2025"
 
 with sync_playwright() as p:
 
-    browser = p.chromium.launch(
-        headless=True
-    )
+    browser = p.chromium.launch(headless=True)
 
     page = browser.new_page()
+
+    # kalau muncul alert javascript
+    page.on(
+        "dialog",
+        lambda dialog: (
+            print("\n=== DIALOG ==="),
+            print(dialog.message),
+            dialog.accept()
+        )
+    )
 
     print("Membuka website...")
 
     page.goto(URL, wait_until="networkidle")
 
-    # tunggu iframe muncul
     page.wait_for_timeout(3000)
 
     frame = page.frames[2]
@@ -57,7 +64,6 @@ with sync_playwright() as p:
                 if(opt.text.trim()==site){
 
                     select.value=opt.value || opt.text;
-
                     break;
 
                 }
@@ -71,9 +77,7 @@ with sync_playwright() as p:
                 const inst=M.FormSelect.getInstance(select);
 
                 if(inst){
-
                     inst.destroy();
-
                 }
 
                 M.FormSelect.init(select);
@@ -99,7 +103,7 @@ with sync_playwright() as p:
             """
             () => {
 
-                const inst = M.Datepicker.getInstance(
+                const inst=M.Datepicker.getInstance(
                     document.querySelector("#meetingDate")
                 );
 
@@ -107,9 +111,9 @@ with sync_playwright() as p:
                     return "Datepicker belum siap";
 
                 return {
-                    format: inst.options.format,
-                    minDate: inst.options.minDate,
-                    maxDate: inst.options.maxDate
+                    format:inst.options.format,
+                    minDate:inst.options.minDate,
+                    maxDate:inst.options.maxDate
                 };
 
             }
@@ -157,15 +161,8 @@ with sync_playwright() as p:
 
     print("\n=== VALUE ===")
 
-    print(
-        "Meeting Date :",
-        frame.locator("#meetingDate").input_value()
-    )
-
-    print(
-        "Meeting End  :",
-        frame.locator("#meetingEnd").input_value()
-    )
+    print("Meeting Date :", frame.locator("#meetingDate").input_value())
+    print("Meeting End  :", frame.locator("#meetingEnd").input_value())
 
     # =====================================
     # STATUS
@@ -174,18 +171,75 @@ with sync_playwright() as p:
     status = frame.locator("#statusRuangan").inner_text()
 
     print("\n============================")
-    print(status)
+    print("Room status :", status)
     print("============================")
 
     if "available" in status.lower():
 
         print("Ruangan tersedia.")
 
-        frame.locator("#submit-reservation-detail").click(force=True)
+        button = frame.locator("#submit-reservation-detail")
+
+        print("\n=== BUTTON HTML ===")
+        print(button.evaluate("e=>e.outerHTML"))
+
+        page.wait_for_timeout(1000)
+
+        print("\nKlik Make Reservation...")
+
+        button.click(force=True)
+
+        page.wait_for_timeout(3000)
+
+        # =====================================
+        # Popup Materialize
+        # =====================================
+
+        try:
+
+            modal = frame.locator(".modal.open")
+
+            if modal.count() > 0:
+
+                print("\n=== POPUP ===")
+                print(modal.inner_text())
+
+                btns = modal.locator("button")
+
+                for i in range(btns.count()):
+
+                    text = btns.nth(i).inner_text().strip()
+
+                    print("Button:", text)
+
+                    if text.lower() in [
+                        "ok",
+                        "yes",
+                        "submit",
+                        "confirm",
+                        "continue"
+                    ]:
+
+                        btns.nth(i).click(force=True)
+
+                        print("Popup dikonfirmasi")
+
+                        break
+
+        except Exception as e:
+
+            print("Tidak ada popup:", e)
 
         page.wait_for_timeout(5000)
 
-        print("Booking selesai.")
+        try:
+
+            print("\n=== STATUS AKHIR ===")
+            print(frame.locator("#statusRuangan").inner_text())
+        except:
+            pass
+
+        print("\nBooking selesai.")
 
     else:
 
