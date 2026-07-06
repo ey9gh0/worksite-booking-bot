@@ -1,20 +1,35 @@
 from playwright.sync_api import sync_playwright
+from datetime import datetime, timedelta
+import pandas as pd
 
 URL = "https://script.google.com/a/macros/banksinarmas.com/s/AKfycbyGVQZaMoU4Q4HOS51V2Tmt_nnO2UNu4QCfUbk6EWuGVYtamrhMMLoUv-kI1oGHU9-0Nw/exec?v=bookWorkSite"
 
-# ==============================
-# DATA BOOKING
-# ==============================
+# =====================================================
+# HITUNG HARI KERJA BERIKUTNYA
+# =====================================================
 
-NIK = "025603"
-NAMA = "Erwin Yonathan"
-DIVISI = "Product Management Division Head (Funding, Wealth, Treasury & Corporate)"
-EMAIL = "erwin.yonathan@banksinarmas.com"
+today = datetime.today()
 
-WORKSITE = "GOP 1"
-TANGGAL = "Jul 7, 2026"
+booking_date = today + timedelta(days=1)
 
-# ==============================
+while booking_date.weekday() >= 5:
+    booking_date += timedelta(days=1)
+
+TANGGAL = booking_date.strftime("%b %d, %Y").replace(" 0", " ")
+
+print("=" * 60)
+print("Tanggal Booking :", TANGGAL)
+print("=" * 60)
+
+# =====================================================
+# BACA EXCEL
+# =====================================================
+
+df = pd.read_excel("booking.xlsx")
+
+# =====================================================
+# PLAYWRIGHT
+# =====================================================
 
 with sync_playwright() as p:
 
@@ -22,7 +37,6 @@ with sync_playwright() as p:
 
     page = browser.new_page()
 
-    # kalau muncul alert javascript
     page.on(
         "dialog",
         lambda dialog: (
@@ -32,168 +46,127 @@ with sync_playwright() as p:
         )
     )
 
-    print("Membuka website...")
+    for index, row in df.iterrows():
 
-    page.goto(URL, wait_until="networkidle")
+        print("\n")
+        print("=" * 60)
+        print(f"USER {index+1}")
+        print("=" * 60)
 
-    page.wait_for_timeout(3000)
+        NIK = str(row["NIK"]).strip()
+        NAMA = str(row["NAMA"]).strip()
+        DIVISI = str(row["DIVISI"]).strip()
+        EMAIL = str(row["EMAIL"]).strip()
+        WORKSITE = str(row["WORKSITE"]).strip()
 
-    frame = page.frames[2]
+        print("Nama :", NAMA)
+        print("Worksite :", WORKSITE)
 
-    print("Mengisi data...")
+        page.goto(URL, wait_until="networkidle")
+        page.wait_for_timeout(3000)
 
-    frame.locator("#nik").fill(NIK)
-    frame.locator("#nama").fill(NAMA)
-    frame.locator("#divisi").fill(DIVISI)
-    frame.locator("#email").fill(EMAIL)
+        frame = page.frames[2]
 
-    # =====================================
-    # WORKSITE
-    # =====================================
+        # =======================================
+        # Isi Form
+        # =======================================
 
-    print("Memilih Work Site...")
+        frame.locator("#nik").fill(NIK)
+        frame.locator("#nama").fill(NAMA)
+        frame.locator("#divisi").fill(DIVISI)
+        frame.locator("#email").fill(EMAIL)
 
-    frame.evaluate(
-        """
-        (site)=>{
+        # =======================================
+        # WORKSITE
+        # =======================================
 
-            const select=document.querySelector("#workSite");
+        frame.evaluate(
+            """
+            (site)=>{
 
-            for(const opt of select.options){
+                const select=document.querySelector("#workSite");
 
-                if(opt.text.trim()==site){
+                for(const opt of select.options){
 
-                    select.value=opt.value || opt.text;
-                    break;
+                    if(opt.text.trim()==site){
+
+                        select.value=opt.value || opt.text;
+                        break;
+
+                    }
+
+                }
+
+                select.dispatchEvent(new Event("change",{bubbles:true}));
+
+                if(window.M){
+
+                    const inst=M.FormSelect.getInstance(select);
+
+                    if(inst) inst.destroy();
+
+                    M.FormSelect.init(select);
 
                 }
 
             }
-
-            select.dispatchEvent(new Event("change",{bubbles:true}));
-
-            if(window.M){
-
-                const inst=M.FormSelect.getInstance(select);
-
-                if(inst){
-                    inst.destroy();
-                }
-
-                M.FormSelect.init(select);
-
-            }
-
-        }
-        """,
-        WORKSITE,
-    )
-
-    page.wait_for_timeout(1000)
-
-    # =====================================
-    # DATEPICKER INFO
-    # =====================================
-
-    print("\n=== DATEPICKER INFO ===")
-
-    try:
-
-        info = frame.evaluate(
-            """
-            () => {
-
-                const inst=M.Datepicker.getInstance(
-                    document.querySelector("#meetingDate")
-                );
-
-                if(!inst)
-                    return "Datepicker belum siap";
-
-                return {
-                    format:inst.options.format,
-                    minDate:inst.options.minDate,
-                    maxDate:inst.options.maxDate
-                };
-
-            }
-            """
+            """,
+            WORKSITE
         )
 
-        print(info)
+        page.wait_for_timeout(1000)
 
-    except Exception as e:
+        # =======================================
+        # TANGGAL
+        # =======================================
 
-        print(e)
+        frame.evaluate(
+            """
+            (tgl)=>{
 
-    # =====================================
-    # ISI TANGGAL
-    # =====================================
+                const start=document.querySelector("#meetingDate");
+                const end=document.querySelector("#meetingEnd");
 
-    print("\nMengisi tanggal...")
+                start.value=tgl;
+                end.value=tgl;
 
-    frame.evaluate(
-        """
-        (tgl)=>{
+                start.dispatchEvent(new Event("input",{bubbles:true}));
+                end.dispatchEvent(new Event("input",{bubbles:true}));
 
-            const start=document.querySelector("#meetingDate");
-            const end=document.querySelector("#meetingEnd");
+                start.dispatchEvent(new Event("change",{bubbles:true}));
+                end.dispatchEvent(new Event("change",{bubbles:true}));
 
-            start.value=tgl;
-            end.value=tgl;
+                if(typeof checkRoom==="function"){
+                    checkRoom();
+                }
 
-            start.dispatchEvent(new Event("input",{bubbles:true}));
-            end.dispatchEvent(new Event("input",{bubbles:true}));
-
-            start.dispatchEvent(new Event("change",{bubbles:true}));
-            end.dispatchEvent(new Event("change",{bubbles:true}));
-
-            if(typeof checkRoom==="function"){
-                checkRoom();
             }
+            """,
+            TANGGAL
+        )
 
-        }
-        """,
-        TANGGAL,
-    )
+        page.wait_for_timeout(5000)
 
-    page.wait_for_timeout(5000)
+        status = frame.locator("#statusRuangan").inner_text()
 
-    print("\n=== VALUE ===")
+        print("Status :", status)
 
-    print("Meeting Date :", frame.locator("#meetingDate").input_value())
-    print("Meeting End  :", frame.locator("#meetingEnd").input_value())
+        if "available" not in status.lower():
 
-    # =====================================
-    # STATUS
-    # =====================================
-
-    status = frame.locator("#statusRuangan").inner_text()
-
-    print("\n============================")
-    print("Room status :", status)
-    print("============================")
-
-    if "available" in status.lower():
+            print("Skip karena ruangan penuh.")
+            continue
 
         print("Ruangan tersedia.")
 
         button = frame.locator("#submit-reservation-detail")
 
-        print("\n=== BUTTON HTML ===")
-        print(button.evaluate("e=>e.outerHTML"))
-
-        page.wait_for_timeout(1000)
-
-        print("\nKlik Make Reservation...")
-
         button.click(force=True)
 
         page.wait_for_timeout(3000)
 
-        # =====================================
+        # =======================================
         # Popup Materialize
-        # =====================================
+        # =======================================
 
         try:
 
@@ -201,18 +174,13 @@ with sync_playwright() as p:
 
             if modal.count() > 0:
 
-                print("\n=== POPUP ===")
-                print(modal.inner_text())
-
                 btns = modal.locator("button")
 
                 for i in range(btns.count()):
 
-                    text = btns.nth(i).inner_text().strip()
+                    text = btns.nth(i).inner_text().strip().lower()
 
-                    print("Button:", text)
-
-                    if text.lower() in [
+                    if text in [
                         "ok",
                         "yes",
                         "submit",
@@ -226,23 +194,11 @@ with sync_playwright() as p:
 
                         break
 
-        except Exception as e:
-
-            print("Tidak ada popup:", e)
-
-        page.wait_for_timeout(5000)
-
-        try:
-
-            print("\n=== STATUS AKHIR ===")
-            print(frame.locator("#statusRuangan").inner_text())
         except:
             pass
 
-        print("\nBooking selesai.")
+        page.wait_for_timeout(5000)
 
-    else:
-
-        print("Ruangan belum tersedia.")
+        print("Booking selesai.")
 
     browser.close()
