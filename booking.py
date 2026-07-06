@@ -1,163 +1,162 @@
 from playwright.sync_api import sync_playwright, expect
+import pandas as pd
+from datetime import datetime, timedelta
 
 URL = "https://script.google.com/a/macros/banksinarmas.com/s/AKfycbyGVQZaMoU4Q4HOS51V2Tmt_nnO2UNu4QCfUbk6EWuGVYtamrhMMLoUv-kI1oGHU9-0Nw/exec?v=bookWorkSite"
 
-# ======================================================
-# DATA
-# ======================================================
 
-NIK = "12345678"          # ganti dengan NIK asli
-NAMA = "Nama Kamu"
-DIVISI = "IT"
-EMAIL = "email@banksinarmas.com"
+# =====================================================
+# LOAD DATA
+# =====================================================
 
-WORKSITE = "L'Avenue"
-TANGGAL = "Jul 22, 2025"
+booking_df = pd.read_excel("booking.xlsx")
 
-# ======================================================
+holiday_df = pd.read_excel("holiday.xlsx")
+
+holiday_list = set(
+    pd.to_datetime(holiday_df["DATE"]).dt.date
+)
+
+
+# =====================================================
+# NEXT WORKING DAY
+# =====================================================
+
+def get_next_working_day():
+
+    today = datetime.today().date()
+
+    target = today + timedelta(days=1)
+
+    while target.weekday() >= 5 or target in holiday_list:
+        target += timedelta(days=1)
+
+    return target.strftime("%b %d, %Y")
+
+
+BOOKING_DATE = get_next_working_day()
+
+print("Booking Date :", BOOKING_DATE)
+
+
+# =====================================================
+# LOOP DATA
+# =====================================================
 
 with sync_playwright() as p:
 
-    browser = p.chromium.launch(
-        headless=True
-    )
+    browser = p.chromium.launch(headless=True)
 
-    page = browser.new_page()
+    for _, row in booking_df.iterrows():
 
-    print("Membuka website...")
+        print("=" * 50)
+        print("Booking :", row["NAMA"])
 
-    page.goto(URL, wait_until="networkidle")
+        page = browser.new_page()
 
-    page.wait_for_timeout(3000)
+        page.goto(URL, wait_until="networkidle")
 
-    frame = page.frames[2]
+        page.wait_for_timeout(3000)
 
-    # ======================================================
-    # Isi Form
-    # ======================================================
+        frame = page.frames[2]
 
-    print("Mengisi data...")
+        # =====================================
+        # INPUT
+        # =====================================
 
-    frame.locator("#nik").fill(NIK)
-    frame.locator("#nama").fill(NAMA)
-    frame.locator("#divisi").fill(DIVISI)
-    frame.locator("#email").fill(EMAIL)
+        frame.locator("#nik").fill(str(row["NIK"]))
 
-    # pastikan benar-benar masuk
+        frame.locator("#nama").fill(row["NAMA"])
 
-    expect(frame.locator("#nik")).to_have_value(NIK)
-    expect(frame.locator("#nama")).to_have_value(NAMA)
-    expect(frame.locator("#divisi")).to_have_value(DIVISI)
-    expect(frame.locator("#email")).to_have_value(EMAIL)
+        frame.locator("#divisi").fill(row["DIVISI"])
 
-    print("Semua field terisi.")
+        frame.locator("#email").fill(row["EMAIL"])
 
-    # ======================================================
-    # Worksite
-    # ======================================================
+        expect(frame.locator("#nik")).to_have_value(str(row["NIK"]))
 
-    print("Memilih Worksite...")
+        # =====================================
+        # WORKSITE
+        # =====================================
 
-    frame.evaluate(
-        """
-        (site)=>{
+        frame.evaluate(
+            """
+            (site)=>{
 
-            const select=document.querySelector("#workSite");
+                const select=document.querySelector("#workSite");
 
-            for(const opt of select.options){
+                for(const opt of select.options){
 
-                if(opt.text.trim()==site){
+                    if(opt.text.trim()==site){
 
-                    select.value=opt.value || opt.text;
-                    break;
+                        select.value=opt.value || opt.text;
+                        break;
+                    }
 
                 }
 
-            }
+                select.dispatchEvent(new Event("change",{bubbles:true}));
 
-            select.dispatchEvent(new Event("change",{bubbles:true}));
-
-            if(window.M){
-
-                M.FormSelect.init(select);
+                if(window.M){
+                    M.FormSelect.init(select);
+                }
 
             }
+            """,
+            row["WORKSITE"]
+        )
 
-        }
-        """,
-        WORKSITE
-    )
+        page.wait_for_timeout(1000)
 
-    page.wait_for_timeout(1000)
+        # =====================================
+        # DATE
+        # =====================================
 
-    # ======================================================
-    # Tanggal
-    # ======================================================
+        frame.evaluate(
+            """
+            (tgl)=>{
 
-    print("Mengisi tanggal...")
+                meetingDate.value=tgl;
+                meetingEnd.value=tgl;
 
-    frame.evaluate(
-        """
-        (tgl)=>{
+                meetingDate.dispatchEvent(new Event("input",{bubbles:true}));
+                meetingEnd.dispatchEvent(new Event("input",{bubbles:true}));
 
-            meetingDate.value=tgl;
-            meetingEnd.value=tgl;
+                meetingDate.dispatchEvent(new Event("change",{bubbles:true}));
+                meetingEnd.dispatchEvent(new Event("change",{bubbles:true}));
 
-            meetingDate.dispatchEvent(new Event("input",{bubbles:true}));
-            meetingEnd.dispatchEvent(new Event("input",{bubbles:true}));
+                checkRoom();
 
-            meetingDate.dispatchEvent(new Event("change",{bubbles:true}));
-            meetingEnd.dispatchEvent(new Event("change",{bubbles:true}));
+            }
+            """,
+            BOOKING_DATE
+        )
 
-            checkRoom();
+        page.wait_for_timeout(4000)
 
-        }
-        """,
-        TANGGAL
-    )
+        status = frame.locator("#statusRuangan").inner_text()
 
-    page.wait_for_timeout(4000)
+        print(status)
 
-    print("Meeting Date :", frame.locator("#meetingDate").input_value())
-    print("Meeting End  :", frame.locator("#meetingEnd").input_value())
+        if "available" in status.lower():
 
-    status = frame.locator("#statusRuangan").inner_text()
+            print("Room Available")
 
-    print(status)
+            def handle_dialog(dialog):
+                print(dialog.message)
+                dialog.accept()
 
-    # ======================================================
-    # Submit
-    # ======================================================
+            page.on("dialog", handle_dialog)
 
-    if "available" in status.lower():
+            frame.locator("#submit-reservation-detail").click(force=True)
 
-        print("Ruangan tersedia.")
+            page.wait_for_timeout(5000)
 
-        def handle_dialog(dialog):
-            print("\n========== ALERT ==========")
-            print(dialog.message)
-            dialog.accept()
+            print("SUCCESS :", row["NAMA"])
 
-        page.on("dialog", handle_dialog)
+        else:
 
-        print("Klik Make Reservation")
+            print("FAILED :", row["NAMA"])
 
-        frame.locator("#submit-reservation-detail").click(force=True)
-
-        page.wait_for_timeout(5000)
-
-        print("\n========== VALUE TERKIRIM ==========")
-
-        print("NIK   :", frame.locator("#nik").input_value())
-        print("Nama  :", frame.locator("#nama").input_value())
-        print("Divisi:", frame.locator("#divisi").input_value())
-        print("Email :", frame.locator("#email").input_value())
-
-        print("\n========== STATUS ==========")
-        print(frame.locator("#statusRuangan").inner_text())
-
-    else:
-
-        print("Ruangan belum tersedia.")
+        page.close()
 
     browser.close()
