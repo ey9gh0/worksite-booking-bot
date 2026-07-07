@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
 
   schedule:
-    # Senin - Jumat jam 08:00 WIB (01:00 UTC)
-    - cron: "0 1 * * 1-5"
+    # Senin - Jumat jam 07:00 WIB (00:00 UTC)
+    - cron: "0 0 * * 1-5"
 
 jobs:
   booking:
