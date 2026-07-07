@@ -3,7 +3,8 @@ name: Worksite Booking Bot
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 0 * * 1-5'
+    # Kita pancing pakai menit ganjil (06:55 WIB / 23:55 UTC)
+    - cron: '55 23 * * 1-5'
 
 jobs:
   booking:
@@ -21,10 +22,11 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
       - name: Install Playwright Browser
         run: |
+          pip install playwright
           playwright install --with-deps chromium
 
       - name: Run Booking Bot
