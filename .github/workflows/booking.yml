@@ -1,10 +1,7 @@
 name: Worksite Booking Bot
-
 on:
   workflow_dispatch:
-
   schedule:
-    # Senin - Jumat jam 07:00 WIB (00:00 UTC)
     - cron: '0 0 * * 1-5'
 
 jobs:
