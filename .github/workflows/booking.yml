@@ -1,4 +1,5 @@
 name: Worksite Booking Bot
+
 on:
   workflow_dispatch:
   schedule:
@@ -6,13 +7,9 @@ on:
 
 jobs:
   booking:
-
     runs-on: ubuntu-latest
-
     timeout-minutes: 15
-
     steps:
-
       - name: Checkout Repository
         uses: actions/checkout@v4
 
