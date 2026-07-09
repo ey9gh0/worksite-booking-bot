@@ -2,9 +2,9 @@ name: Worksite Booking Bot
 
 on:
   workflow_dispatch:
-  schedule:
+  #schedule:
     # Kita pancing pakai menit ganjil (06:55 WIB / 23:55 UTC)
-    - cron: '55 23 * * 1-5'
+    #- cron: '55 23 * * 1-5'
 
 jobs:
   booking:
