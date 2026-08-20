@@ -95,18 +95,6 @@ with sync_playwright() as p:
 
         page = browser.new_page()
 
-        # Variable khusus penampung pesan alert/dialog
-        last_alert_msg = {"text": ""}
-
-        # Listener untuk menangkap pop-up alert browser
-        def handle_dialog(dialog):
-            msg = dialog.message.strip()
-            print(f"💬 ALERT DETECTED: '{msg}'")
-            last_alert_msg["text"] = msg
-            dialog.accept()
-
-        page.on("dialog", handle_dialog)
-
         page.goto(URL, wait_until="networkidle")
         page.wait_for_timeout(random.randint(2000, 4000))
 
@@ -206,7 +194,7 @@ with sync_playwright() as p:
         page.wait_for_timeout(random.randint(3000, 5000))
 
         # =================================================
-        # CHECK STATUS & VERIFY STRICT POP-UP
+        # CHECK STATUS & VERIFY DIALOG (NO TIMEOUT)
         # =================================================
 
         status = frame.locator("#statusRuangan").inner_text()
@@ -219,22 +207,30 @@ with sync_playwright() as p:
 
             submit_btn = frame.locator("#submit-reservation-detail")
             submit_btn.wait_for(state="visible")
-            submit_btn.click()
 
-            # Tunggu respons dari backend dan pemunculan alert dialog (maksimal 10 detik)
-            print("⏳ Menunggu pop-up konfirmasi dari server...")
-            page.wait_for_timeout(8000)
+            print(
+                "⏳ Menunggu pop-up konfirmasi dari server (Tanpa Timeout)..."
+            )
 
-            # Strict Check: Teks pop-up harus sesuai persis
+            # Berhenti dan menunggu dialog/pop-up muncul tanpa batas waktu
+            with page.expect_event("dialog", timeout=0) as dialog_info:
+                submit_btn.click()
+
+            dialog = dialog_info.value
+            alert_msg = dialog.message.strip()
+            print(f"💬 ALERT DETECTED: '{alert_msg}'")
+
+            # Tutup pop-up alert di browser
+            dialog.accept()
+
+            # Strict Verification Check
             expected_msg = "Location succesfully booked!"
 
-            if last_alert_msg["text"] == expected_msg:
-                print("✔ Booking Success (Verified by Alert Pop-Up)")
+            if alert_msg == expected_msg:
+                print("✔ Booking Success (Verified by Pop-Up)")
                 results.append({"name": user["NAMA"], "status": "SUCCESS"})
             else:
-                print(
-                    f"✖ Booking Gagal! Alert yang muncul: '{last_alert_msg['text']}'"
-                )
+                print(f"✖ Booking Gagal! Pesan Alert: '{alert_msg}'")
                 results.append(
                     {"name": user["NAMA"], "status": "FAILED (Pop-up Mismatch)"}
                 )
