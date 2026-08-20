@@ -1,20 +1,12 @@
 from datetime import datetime, timedelta
+import os
 import random
 import sys
 import time
 from openpyxl import load_workbook
-from playwright.sync_api import expect, sync_playwright
+from playwright.sync_api import sync_playwright
 
 URL = "https://script.google.com/a/macros/banksinarmas.com/s/AKfycbyGVQZaMoU4Q4HOS51V2Tmt_nnO2UNu4QCfUbk6EWuGVYtamrhMMLoUv-kI1oGHU9-0Nw/exec?v=bookWorkSite"
-
-
-# =====================================================
-# DELAY FUNCTIONS
-# =====================================================
-
-
-def short_delay(min_ms=500, max_ms=1500):
-    time.sleep(random.uniform(min_ms, max_ms) / 1000)
 
 
 # =====================================================
@@ -26,7 +18,7 @@ def load_booking_data():
     try:
         wb = load_workbook("booking.xlsx")
     except FileNotFoundError:
-        print("❌ Error: File 'booking.xlsx' tidak ditemukan.")
+        print("❌ File 'booking.xlsx' tidak ditemukan.")
         sys.exit(1)
 
     ws = wb.active
@@ -61,10 +53,7 @@ def get_next_week_range():
     next_monday = today + timedelta(days=days_until_next_monday)
     next_friday = next_monday + timedelta(days=4)
 
-    start_date_str = next_monday.strftime("%b %d, %Y")
-    end_date_str = next_friday.strftime("%b %d, %Y")
-
-    return start_date_str, end_date_str
+    return next_monday.strftime("%b %d, %Y"), next_friday.strftime("%b %d, %Y")
 
 
 # =====================================================
@@ -74,39 +63,31 @@ def get_next_week_range():
 booking_data = load_booking_data()
 START_DATE, END_DATE = get_next_week_range()
 
-print("\n📅 Periode Booking Minggu Depan:")
-print(f"   Tanggal Mulai (Senin)  : {START_DATE}")
-print(f"   Tanggal Selesai (Jumat): {END_DATE}\n")
-
-# =====================================================
-# PLAYWRIGHT AUTOMATION
-# =====================================================
+if not os.path.exists("videos"):
+    os.makedirs("videos")
 
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
     total_data = len(booking_data)
 
     for idx, user in enumerate(booking_data, start=1):
-        print("\n" + "=" * 60)
-        print(f"[{idx}/{total_data}] Processing Booking : {user['NAMA']}")
+        print(f"[{idx}/{total_data}] Memproses & Merekam: {user['NAMA']}...")
 
-        page = browser.new_page()
+        # Merekam Video Browser HD
+        context = browser.new_context(
+            record_video_dir="videos/",
+            record_video_size={"width": 1280, "height": 720},
+        )
+        page = context.new_page()
 
-        # Flag penanda bahwa alert browser (Uploading...) sudah diklik OK
-        alert_dismissed = {"status": False}
-
-        def handle_dialog(dialog):
-            print(f"🔔 Alert Muncul: '{dialog.message.strip()}' -> Auto Click OK")
-            alert_dismissed["status"] = True
-            dialog.accept()
-
-        page.on("dialog", handle_dialog)
+        # Auto accept semua alert agar rekaman berjalan lancar
+        page.on("dialog", lambda dialog: dialog.accept())
 
         try:
             page.goto(URL, wait_until="networkidle")
             page.wait_for_timeout(2000)
 
-            # 1. Cari Frame
+            # Cari Frame
             frame = None
             for f in page.frames:
                 if f.locator("#nik").count() > 0:
@@ -114,22 +95,15 @@ with sync_playwright() as p:
                     break
 
             if frame is None:
-                print("❌ Frame tidak ditemukan, melewati user ini...")
                 continue
 
-            # 2. Input Form
+            # Input Form Profil
             frame.locator("#nik").fill(user["NIK"])
-            short_delay()
             frame.locator("#nama").fill(user["NAMA"])
-            short_delay()
             frame.locator("#divisi").fill(user["DIVISI"])
-            short_delay()
             frame.locator("#email").fill(user["EMAIL"])
-            short_delay()
 
-            expect(frame.locator("#nik")).to_have_value(user["NIK"])
-
-            # 3. Select Worksite
+            # Select Worksite
             frame.evaluate(
                 """
                 (site)=>{
@@ -147,9 +121,7 @@ with sync_playwright() as p:
                 user["WORKSITE"],
             )
 
-            page.wait_for_timeout(1000)
-
-            # 4. Set Tanggal & Trigger Cek Ruangan
+            # Set Tanggal
             frame.evaluate(
                 """
                 (dates)=>{
@@ -171,39 +143,35 @@ with sync_playwright() as p:
                 {"start": START_DATE, "end": END_DATE},
             )
 
-            # Tunggu 5 detik agar status ruangan selesai diproses
-            page.wait_for_timeout(5000)
+            page.wait_for_timeout(4000)
 
-            # 5. Klik Submit
-            print("🔘 Mengeklik Tombol Submit...")
+            # Klik Submit
             frame.locator("#submit-reservation-detail").click(force=True)
 
-            # 6. Tunggu hingga alert "Uploading" muncul & ditutup (Maksimal 10 detik)
-            for _ in range(10):
-                page.wait_for_timeout(1000)
-                if alert_dismissed["status"]:
-                    break
-
-            # Beri jeda 3 detik setelah alert ditutup agar upload backend selesai & UI ter-update
-            print("⏳ Menunggu proses upload selesai di latar belakang...")
-            page.wait_for_timeout(3000)
-
-            # 7. LANGSUNG SCREENSHOT DILAKUKAN DI SINI
-            filename = f"booking_{user['NAMA']}.png"
-            page.screenshot(path=filename, full_page=True)
-            print(f"📸 Screenshot Berhasil Tersimpan: {filename}")
+            # Beri waktu 5 detik agar rekaman menangkap proses submit hingga selesai
+            page.wait_for_timeout(5000)
 
         except Exception as e:
-            print(f"❌ Terjadi Error: {e}")
+            pass
 
         finally:
-            page.close()
+            video_obj = page.video
+            video_path_original = video_obj.path() if video_obj else None
 
-            # Jeda 10 detik sebelum lanjut ke data orang berikutnya
+            page.close()
+            context.close()
+
+            # Simpan file video dengan nama pengguna
+            if video_path_original and os.path.exists(video_path_original):
+                target_video_path = f"videos/booking_{user['NAMA']}.webm"
+                if os.path.exists(target_video_path):
+                    os.remove(target_video_path)
+                os.rename(video_path_original, target_video_path)
+
+            # Jeda 10 detik antar pengguna
             if idx < total_data:
-                print("⏳ Menunggu jeda 10 detik sebelum lanjut ke orang berikutnya...")
                 time.sleep(10)
 
     browser.close()
 
-print("\n✨ Seluruh eksekusi dan screenshot selesai!")
+print("\n✨ Seluruh proses booking dan rekaman video selesai disimpandi folder 'videos/'!")
