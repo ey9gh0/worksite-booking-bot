@@ -231,11 +231,7 @@ with sync_playwright() as p:
 
             # Klik tombol submit
             frame.locator("#submit-reservation-detail").click(force=True)
-            print("✔ Submit diklik")
-
-            # Jeda 15 detik untuk menunggu pemrosesan server dan memastikan event dialog selesai
-            print("⏳ Menunggu 15 detik respons server...")
-            time.sleep(15)
+            print("✔ Submit berhasil diklik")
 
             # Verifikasi kata kunci sukses
             actual_msg = alert_received["text"]
@@ -279,8 +275,6 @@ with sync_playwright() as p:
             page.screenshot(
                 path=f"booking_{user['NAMA']}_UNAVAILABLE.png", full_page=True
             )
-            print("⏳ Menunggu 15 detik...")
-            time.sleep(15)
 
         page.close()
 
