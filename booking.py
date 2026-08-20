@@ -198,7 +198,7 @@ with sync_playwright() as p:
         page.wait_for_timeout(random.randint(6000, 10000))
 
         # =================================================
-        # LOGIC BOOKING (INSTANT EVENT-BASED)
+        # LOGIC BOOKING + DYNAMIC ALERT WAITING
         # =================================================
 
         if "available" in status.lower():
@@ -207,24 +207,33 @@ with sync_playwright() as p:
             random_delay(2, 5)
 
             try:
-                # Menunggu event dialog muncul secara dinamis saat klik submit (timeout 15s jika server error)
-                with page.expect_event("dialog", timeout=15000) as dialog_info:
+                # ⏳ Menunggu event 'dialog' terpicu secara dinamis saat tombol diklik (maksimal tunggu 20 detik)
+                with page.expect_event("dialog", timeout=20000) as dialog_info:
                     frame.locator("#submit-reservation-detail").click(
                         force=True
                     )
-                    print("✔ Submit diklik, menunggu pop-up muncul...")
+                    print(
+                        "✔ Submit diklik, menunggu respons server Google Apps Script..."
+                    )
 
+                # Ambil objek dialog saat pop-up balikan muncul
                 dialog = dialog_info.value
                 actual_msg = dialog.message.strip()
-                print(f"💬 ALERT DETECTED: '{actual_msg}'")
 
-                # 📸 SCREENSHOT TEPAT SAAT POP-UP TAMPIL
+                print("\n" + "🔔" * 20)
+                print(f" 💬 TEKS POP-UP POP-UP SERVER: '{actual_msg}'")
+                print("🔔" * 20 + "\n")
+
+                # Klik 'OK' pada alert
+                dialog.accept()
+
+                # Beri jeda 2 detik agar halaman merespons penutupan alert
+                page.wait_for_timeout(2000)
+
+                # 📸 Screenshot hasil akhir halaman web
                 filename = f"booking_{user['NAMA']}.png"
                 page.screenshot(path=filename, full_page=True)
-                print(f"📸 Screenshot pop-up berhasil tersimpan: {filename}")
-
-                # Tutup dialog alert setelah screenshot diambil
-                dialog.accept()
+                print(f"📸 Screenshot tersimpan: {filename}")
 
                 # Evaluasi kata kunci sukses
                 actual_msg_lower = actual_msg.lower()
@@ -254,7 +263,7 @@ with sync_playwright() as p:
 
             except Exception as e:
                 print(
-                    f"✖ Booking Gagal/Timeout! Pop-up tidak muncul dalam 15s. Error: {e}"
+                    f"✖ Timeout 20 detik! Server tidak memberikan balikan alert. Error: {e}"
                 )
                 results.append(
                     {"name": user["NAMA"], "status": "FAILED (No Pop-up)"}
