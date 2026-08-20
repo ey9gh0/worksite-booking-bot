@@ -32,3 +32,11 @@ jobs:
       - name: Run Booking Bot
         run: |
           python booking.py
+
+      # 📸 TUGAS PENTING: MENGUNGGAH FILE SCREENSHOT KE GITHUB ARTIFACTS
+      - name: Upload Screenshot Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: booking-screenshots
+          path: "*.png"
