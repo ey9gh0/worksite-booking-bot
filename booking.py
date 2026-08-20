@@ -1,8 +1,8 @@
-from playwright.sync_api import sync_playwright, expect
-from openpyxl import load_workbook
 from datetime import datetime, timedelta
 import random
 import time
+from openpyxl import load_workbook
+from playwright.sync_api import expect, sync_playwright
 
 URL = "https://script.google.com/a/macros/banksinarmas.com/s/AKfycbyGVQZaMoU4Q4HOS51V2Tmt_nnO2UNu4QCfUbk6EWuGVYtamrhMMLoUv-kI1oGHU9-0Nw/exec?v=bookWorkSite"
 
@@ -10,6 +10,7 @@ URL = "https://script.google.com/a/macros/banksinarmas.com/s/AKfycbyGVQZaMoU4Q4H
 # =====================================================
 # RANDOM DELAY (HUMAN-LIKE)
 # =====================================================
+
 
 def random_delay(min_sec=2, max_sec=7):
     delay = random.uniform(min_sec, max_sec)
@@ -25,6 +26,7 @@ def short_delay(min_ms=500, max_ms=1500):
 # LOAD BOOKING DATA
 # =====================================================
 
+
 def load_booking_data():
     wb = load_workbook("booking.xlsx")
     ws = wb.active
@@ -32,7 +34,6 @@ def load_booking_data():
     data = []
 
     for row in ws.iter_rows(min_row=2, values_only=True):
-
         if all(cell is None for cell in row):
             continue
 
@@ -41,7 +42,7 @@ def load_booking_data():
             "NAMA": str(row[1]).strip(),
             "DIVISI": str(row[2]).strip(),
             "EMAIL": str(row[3]).strip(),
-            "WORKSITE": str(row[4]).strip()
+            "WORKSITE": str(row[4]).strip(),
         })
 
     return data
@@ -51,18 +52,17 @@ def load_booking_data():
 # NEXT WEEK MONDAY & FRIDAY GENERATOR
 # =====================================================
 
+
 def get_next_week_range():
     today = datetime.today().date()
-    # Menghitung jumlah hari menuju hari Senin di minggu depan
     days_until_next_monday = 7 - today.weekday()
-    
+
     next_monday = today + timedelta(days=days_until_next_monday)
     next_friday = next_monday + timedelta(days=4)
-    
-    # Format sesuai kebutuhan Materialize Datepicker (Contoh: "Jul 13, 2026")
+
     start_date_str = next_monday.strftime("%b %d, %Y")
     end_date_str = next_friday.strftime("%b %d, %Y")
-    
+
     return start_date_str, end_date_str
 
 
@@ -73,7 +73,7 @@ def get_next_week_range():
 booking_data = load_booking_data()
 START_DATE, END_DATE = get_next_week_range()
 
-print(f"\n📅 Booking Periode Minggu Depan:")
+print("\n📅 Booking Periode Minggu Depan:")
 print(f"   Tanggal Mulai (Senin) : {START_DATE}")
 print(f"   Tanggal Selesai (Jumat): {END_DATE}\n")
 
@@ -85,18 +85,27 @@ results = []
 # =====================================================
 
 with sync_playwright() as p:
-
+    # Set headless=False jika ingin memantau prosesnya secara visual
     browser = p.chromium.launch(headless=True)
 
     for idx, user in enumerate(booking_data, start=1):
-
         print("\n" + "=" * 60)
         print(f"[{idx}/{len(booking_data)}] Booking : {user['NAMA']}")
 
-        # delay antar user (biar tidak burst)
-        random_delay(3, 10)
+        random_delay(3, 8)
 
         page = browser.new_page()
+
+        # Variable penampung pesan alert/dialog dari browser
+        last_alert_msg = {"text": ""}
+
+        def handle_dialog(dialog):
+            msg = dialog.message
+            print(f"💬 ALERT POPUP: {msg}")
+            last_alert_msg["text"] = msg
+            dialog.accept()
+
+        page.on("dialog", handle_dialog)
 
         page.goto(URL, wait_until="networkidle")
         page.wait_for_timeout(random.randint(2000, 4000))
@@ -113,10 +122,9 @@ with sync_playwright() as p:
 
         if frame is None:
             print("❌ Form booking tidak ditemukan.")
-            results.append({
-                "name": user["NAMA"],
-                "status": "FAILED (Frame)"
-            })
+            results.append(
+                {"name": user["NAMA"], "status": "FAILED (Frame Not Found)"}
+            )
             page.close()
             continue
 
@@ -137,8 +145,7 @@ with sync_playwright() as p:
         short_delay()
 
         expect(frame.locator("#nik")).to_have_value(user["NIK"])
-
-        print("✔ Form berhasil diisi")
+        print("✔ Form data diri terisi")
 
         # =================================================
         # WORKSITE
@@ -147,31 +154,20 @@ with sync_playwright() as p:
         frame.evaluate(
             """
             (site)=>{
-
                 const select=document.querySelector("#workSite");
-
                 for(const opt of select.options){
-
                     if(opt.text.trim()==site){
-
                         select.value=opt.value || opt.text;
                         break;
-
                     }
-
                 }
-
                 select.dispatchEvent(new Event("change",{bubbles:true}));
-
                 if(window.M){
-
                     M.FormSelect.init(select);
-
                 }
-
             }
             """,
-            user["WORKSITE"]
+            user["WORKSITE"],
         )
 
         page.wait_for_timeout(random.randint(1000, 2500))
@@ -183,7 +179,6 @@ with sync_playwright() as p:
         frame.evaluate(
             """
             (dates)=>{
-
                 const startInput = document.getElementById("meetingDate");
                 const endInput = document.getElementById("meetingEnd");
 
@@ -200,62 +195,83 @@ with sync_playwright() as p:
                     M.updateTextFields();
                 }
 
-                checkRoom();
-
+                if (typeof checkRoom === "function") {
+                    checkRoom();
+                }
             }
             """,
-            {"start": START_DATE, "end": END_DATE}
+            {"start": START_DATE, "end": END_DATE},
         )
 
-        page.wait_for_timeout(random.randint(3000, 6000))
+        page.wait_for_timeout(random.randint(3000, 5000))
 
         # =================================================
-        # CHECK STATUS
+        # CHECK STATUS & VERIFY SUBMIT
         # =================================================
 
         status = frame.locator("#statusRuangan").inner_text()
-        print(f"Status: {status}")
-
-        page.wait_for_timeout(random.randint(1000, 2000))
-
-        # =================================================
-        # BOOKING LOGIC
-        # =================================================
+        print(f"Status Ruangan: {status}")
 
         if "available" in status.lower():
+            print("✔ Room Available, mengirimkan request...")
 
-            print("✔ Room Available")
+            random_delay(2, 4)
 
-            def handle_dialog(dialog):
-                print("ALERT:", dialog.message)
-                dialog.accept()
+            submit_btn = frame.locator("#submit-reservation-detail")
+            submit_btn.wait_for(state="visible")
+            submit_btn.click()  # Dihapus force=True untuk memastikan tombol siap
 
-            page.on("dialog", handle_dialog)
+            # Menunggu proses AJAX/Apps Script backend selesai
+            page.wait_for_timeout(6000)
 
-            random_delay(2, 5)
+            # Verifikasi 1: Berdasarkan pesan pada Dialog Alert
+            alert_text = last_alert_msg["text"].lower()
 
-            frame.locator("#submit-reservation-detail").click(force=True)
+            # Verifikasi 2: Berdasarkan indikator pesan sukses di UI jika ada
+            toast_text = ""
+            if frame.locator(".toast, #success-message").count() > 0:
+                toast_text = (
+                    frame.locator(".toast, #success-message")
+                    .first.inner_text()
+                    .lower()
+                )
 
-            page.wait_for_timeout(random.randint(4000, 7000))
-
-            print("✔ Booking Success")
-
-            results.append({
-                "name": user["NAMA"],
-                "status": "SUCCESS"
-            })
+            # Evaluasi keberhasilan
+            if (
+                "berhasil" in alert_text
+                or "success" in alert_text
+                or "berhasil" in toast_text
+                or "success" in toast_text
+            ):
+                print("✔ Booking Success (Verified Backend)")
+                results.append({"name": user["NAMA"], "status": "SUCCESS"})
+            elif (
+                "gagal" in alert_text
+                or "error" in alert_text
+                or "full" in alert_text
+            ):
+                print(
+                    f"✖ Booking Gagal dari Server: {last_alert_msg['text']}"
+                )
+                results.append(
+                    {"name": user["NAMA"], "status": "FAILED (Server Reject)"}
+                )
+            else:
+                # Jika tidak ada alert khusus, cek apakah form telah dikirim / di-reset
+                print(
+                    "⚠️ Tidak ada konfirmasi jelas dari server. Menandai sebagai Unverified."
+                )
+                results.append(
+                    {"name": user["NAMA"], "status": "FAILED (Unverified)"}
+                )
 
         else:
-
             print("✖ Room Not Available")
-
-            results.append({
-                "name": user["NAMA"],
-                "status": "FAILED"
-            })
+            results.append(
+                {"name": user["NAMA"], "status": "FAILED (Not Available)"}
+            )
 
         page.close()
-
 
     browser.close()
 
@@ -272,8 +288,7 @@ success = 0
 failed = 0
 
 for r in results:
-    print(f"{r['status']:<12} {r['name']}")
-
+    print(f"{r['status']:<25} {r['name']}")
     if r["status"] == "SUCCESS":
         success += 1
     else:
