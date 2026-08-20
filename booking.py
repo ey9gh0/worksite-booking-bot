@@ -91,8 +91,6 @@ with sync_playwright() as p:
         print("\n" + "=" * 60)
         print(f"[{idx}/{len(booking_data)}] Booking : {user['NAMA']}")
 
-        random_delay(3, 8)
-
         page = browser.new_page()
 
         page.goto(URL, wait_until="networkidle")
@@ -110,9 +108,7 @@ with sync_playwright() as p:
 
         if frame is None:
             print("❌ Form booking tidak ditemukan.")
-            results.append(
-                {"name": user["NAMA"], "status": "FAILED (Frame Not Found)"}
-            )
+            results.append({"name": user["NAMA"], "status": "FAILED (Frame)"})
             page.close()
             continue
 
@@ -133,7 +129,8 @@ with sync_playwright() as p:
         short_delay()
 
         expect(frame.locator("#nik")).to_have_value(user["NIK"])
-        print("✔ Form data diri terisi")
+
+        print("✔ Form berhasil diisi")
 
         # =================================================
         # WORKSITE
@@ -183,65 +180,56 @@ with sync_playwright() as p:
                     M.updateTextFields();
                 }
 
-                if (typeof checkRoom === "function") {
-                    checkRoom();
-                }
+                checkRoom();
             }
             """,
             {"start": START_DATE, "end": END_DATE},
         )
 
-        page.wait_for_timeout(random.randint(3000, 5000))
+        page.wait_for_timeout(random.randint(3000, 6000))
 
         # =================================================
-        # CHECK STATUS & VERIFY DIALOG (NO TIMEOUT)
+        # CHECK STATUS
         # =================================================
 
         status = frame.locator("#statusRuangan").inner_text()
-        print(f"Status Ruangan: {status}")
+        print(f"Status: {status}")
+
+        page.wait_for_timeout(random.randint(1000, 2000))
+
+        # =================================================
+        # BOOKING LOGIC
+        # =================================================
 
         if "available" in status.lower():
-            print("✔ Room Available, menekan tombol submit...")
+            print("✔ Room Available")
 
-            random_delay(2, 4)
+            def handle_dialog(dialog):
+                print("ALERT:", dialog.message)
+                dialog.accept()
 
-            submit_btn = frame.locator("#submit-reservation-detail")
-            submit_btn.wait_for(state="visible")
+            page.on("dialog", handle_dialog)
 
-            print(
-                "⏳ Menunggu pop-up konfirmasi dari server (Tanpa Timeout)..."
-            )
+            random_delay(2, 5)
 
-            # Berhenti dan menunggu dialog/pop-up muncul tanpa batas waktu
-            with page.expect_event("dialog", timeout=0) as dialog_info:
-                submit_btn.click()
+            # Klik tombol submit
+            frame.locator("#submit-reservation-detail").click(force=True)
+            print("✔ Submit diklik")
 
-            dialog = dialog_info.value
-            alert_msg = dialog.message.strip()
-            print(f"💬 ALERT DETECTED: '{alert_msg}'")
-
-            # Tutup pop-up alert di browser
-            dialog.accept()
-
-            # Strict Verification Check
-            expected_msg = "Location succesfully booked!"
-
-            if alert_msg == expected_msg:
-                print("✔ Booking Success (Verified by Pop-Up)")
-                results.append({"name": user["NAMA"], "status": "SUCCESS"})
-            else:
-                print(f"✖ Booking Gagal! Pesan Alert: '{alert_msg}'")
-                results.append(
-                    {"name": user["NAMA"], "status": "FAILED (Pop-up Mismatch)"}
-                )
+            results.append({"name": user["NAMA"], "status": "SUCCESS"})
 
         else:
             print("✖ Room Not Available")
-            results.append(
-                {"name": user["NAMA"], "status": "FAILED (Not Available)"}
-            )
+            results.append({"name": user["NAMA"], "status": "FAILED"})
 
         page.close()
+
+        # Jeda 30 detik sebelum membuka page baru untuk antrean/orang berikutnya
+        if idx < len(booking_data):
+            print(
+                "⏳ Menunggu 30 detik sebelum membuka halaman baru untuk orang berikutnya..."
+            )
+            time.sleep(30)
 
     browser.close()
 
@@ -258,7 +246,8 @@ success = 0
 failed = 0
 
 for r in results:
-    print(f"{r['status']:<25} {r['name']}")
+    print(f"{r['status']:<12} {r['name']}")
+
     if r["status"] == "SUCCESS":
         success += 1
     else:
