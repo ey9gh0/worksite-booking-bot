@@ -62,7 +62,6 @@ def load_booking_data():
 
 def get_next_week_range():
     today = datetime.today().date()
-    # Menghitung jarak ke hari Senin minggu depan
     days_until_next_monday = 7 - today.weekday()
 
     next_monday = today + timedelta(days=days_until_next_monday)
@@ -202,73 +201,106 @@ with sync_playwright() as p:
             page.wait_for_timeout(random.randint(4000, 7000))
 
             # -------------------------------------------------
-            # 6. LOGIC SUBMIT + VALIDASI ALERT
+            # 6. LOGIC SUBMIT + DUAL-DETECTION (DIALOG & DOM)
             # -------------------------------------------------
             if "available" in status.lower():
                 print("✔ Ruangan Tersedia (Available)")
-
                 random_delay(2, 4)
 
-                try:
-                    # Menunggu event 'dialog' terpicu saat tombol submit diklik
-                    with page.expect_event(
-                        "dialog", timeout=20000
-                    ) as dialog_info:
-                        frame.locator("#submit-reservation-detail").click(
-                            force=True
-                        )
-                        print(
-                            "✔ Submit diklik, menunggu balikan dari server..."
-                        )
+                # Event listener non-blocking untuk menangkap alert browser
+                dialog_captured = {"message": None}
 
-                    dialog = dialog_info.value
-                    actual_msg = dialog.message.strip()
-
-                    print("\n" + "🔔" * 20)
-                    print(f" 💬 TEKS ALERT SERVER: '{actual_msg}'")
-                    print("🔔" * 20 + "\n")
-
-                    # Klik OK pada alert
+                def handle_dialog(dialog):
+                    print(
+                        f"\n🔔 Alert Terdeteksi via Event: '{dialog.message}'"
+                    )
+                    dialog_captured["message"] = dialog.message.strip()
                     dialog.accept()
 
-                    page.wait_for_timeout(2000)
+                # Pasang listener dialog
+                page.on("dialog", handle_dialog)
 
-                    # Simpan Screenshot bukti
-                    filename = f"booking_{user['NAMA']}.png"
-                    page.screenshot(path=filename, full_page=True)
-                    print(f"📸 Screenshot tersimpan: {filename}")
-
-                    # Pengecekan Eksak untuk Teks Sukses
-                    actual_msg_lower = actual_msg.lower()
-                    is_exact_success = (
-                        "location succesfully booked!" in actual_msg_lower
-                        or "location successfully booked!" in actual_msg_lower
+                try:
+                    # Klik Submit
+                    frame.locator("#submit-reservation-detail").click(
+                        force=True
+                    )
+                    print(
+                        "✔ Submit diklik, memantau respon server (Max 15 detik)..."
                     )
 
-                    if is_exact_success:
-                        print(f"✔ Booking SUCCESS Verified untuk {user['NAMA']}")
-                        results.append(
-                            {"name": user["NAMA"], "status": "SUCCESS"}
+                    actual_msg = None
+
+                    # Polling 15 detik (Mengecek dialog & DOM secara bersamaan)
+                    for _ in range(15):
+                        page.wait_for_timeout(1000)
+
+                        # Opsi A: Alert browser berhasil ditangkap listener
+                        if dialog_captured["message"]:
+                            actual_msg = dialog_captured["message"]
+                            break
+
+                        # Opsi B: Pengecekan teks langsung di dalam HTML frame
+                        frame_html = frame.content().lower()
+                        if "succesfully booked" in frame_html:
+                            actual_msg = "Location succesfully booked!"
+                            break
+                        elif "successfully booked" in frame_html:
+                            actual_msg = "Location successfully booked!"
+                            break
+                        elif "already booked" in frame_html:
+                            actual_msg = "Location already booked!"
+                            break
+
+                    # Lepas listener dialog agar tidak berpengaruh pada iterasi berikutnya
+                    page.remove_listener("dialog", handle_dialog)
+
+                    # Ambil screenshot
+                    filename = f"booking_{user['NAMA']}.png"
+                    page.screenshot(path=filename, full_page=True)
+
+                    # Evaluasi hasil
+                    if actual_msg:
+                        print(
+                            f"\n💬 RESPONS TERDETEKSI: '{actual_msg}' | Screenshot: {filename}"
                         )
+                        actual_msg_lower = actual_msg.lower()
+
+                        if (
+                            "succesfully booked" in actual_msg_lower
+                            or "successfully booked" in actual_msg_lower
+                        ):
+                            print(
+                                f"✔ Booking SUCCESS Verified untuk {user['NAMA']}"
+                            )
+                            results.append(
+                                {"name": user["NAMA"], "status": "SUCCESS"}
+                            )
+                        else:
+                            print(
+                                f"✖ Booking Gagal! Respon Server: '{actual_msg}'"
+                            )
+                            results.append(
+                                {
+                                    "name": user["NAMA"],
+                                    "status": f"FAILED ({actual_msg})",
+                                }
+                            )
                     else:
-                        print(f"✖ Booking Gagal! Respon Alert: '{actual_msg}'")
+                        print(
+                            "✖ Timeout! Tidak ada alert maupun respons teks yang terdeteksi di frame."
+                        )
                         results.append(
                             {
                                 "name": user["NAMA"],
-                                "status": f"FAILED (Alert: {actual_msg})",
+                                "status": "FAILED (No Response/Timeout)",
                             }
                         )
 
                 except Exception as e:
-                    print(
-                        f"✖ Timeout / Error saat menunggu alert server. Detail: {e}"
-                    )
+                    print(f"✖ Error saat proses submit: {e}")
                     results.append(
-                        {"name": user["NAMA"], "status": "FAILED (No Pop-up)"}
-                    )
-                    page.screenshot(
-                        path=f"booking_{user['NAMA']}_TIMEOUT.png",
-                        full_page=True,
+                        {"name": user["NAMA"], "status": f"FAILED ({e})"}
                     )
 
             else:
