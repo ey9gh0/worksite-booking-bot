@@ -2,9 +2,9 @@ name: Auto Booking Worksite
 
 on:
   schedule:
-    # Contoh: Berjalan setiap hari Jumat jam 08:00 WIB (01:00 UTC)
+    # Berjalan setiap hari Jumat jam 08:00 WIB (01:00 UTC)
     - cron: '0 1 * * 5'
-  workflow_dispatch: # Memungkinkan tombol run manual di GitHub Actions
+  workflow_dispatch: # Memungkinkan tombol run manual di GitHub UI
 
 jobs:
   run-booking:
@@ -30,12 +30,12 @@ jobs:
           playwright install-deps
 
       - name: Run Booking Script
-        run: python booking.py # Ubah jika nama file kamu bukan booking.py
+        run: python main.py # Sesuaikan jika nama file kamu booking.py
 
-      - name: Upload Video Recordings
-        if: always() # Tetap simpan video meskipun script mengalami error
+      - name: Upload Single Video Session Artifact
+        if: always() # Tetap simpan video meskipun script ada error
         uses: actions/upload-artifact@v4
         with:
-          name: booking-videos
+          name: full-booking-video-session
           path: videos/
           retention-days: 7
