@@ -8,8 +8,18 @@ from playwright.sync_api import expect, sync_playwright
 URL = "https://script.google.com/a/macros/banksinarmas.com/s/AKfycbyGVQZaMoU4Q4HOS51V2Tmt_nnO2UNu4QCfUbk6EWuGVYtamrhMMLoUv-kI1oGHU9-0Nw/exec?v=bookWorkSite"
 
 
+# =====================================================
+# DELAY FUNCTIONS
+# =====================================================
+
+
 def short_delay(min_ms=500, max_ms=1500):
     time.sleep(random.uniform(min_ms, max_ms) / 1000)
+
+
+# =====================================================
+# LOAD BOOKING DATA
+# =====================================================
 
 
 def load_booking_data():
@@ -21,9 +31,11 @@ def load_booking_data():
 
     ws = wb.active
     data = []
+
     for row in ws.iter_rows(min_row=2, values_only=True):
         if all(cell is None for cell in row):
             continue
+
         data.append(
             {
                 "NIK": str(row[0]).strip(),
@@ -33,16 +45,31 @@ def load_booking_data():
                 "WORKSITE": str(row[4]).strip(),
             }
         )
+
     return data
 
 
+# =====================================================
+# GENERATE SENIN - JUMAT MINGGU DEPAN
+# =====================================================
+
+
 def get_next_week_range():
-    today = datetime.today().date()
+    today = datetime.now().date()
     days_until_next_monday = 7 - today.weekday()
+
     next_monday = today + timedelta(days=days_until_next_monday)
     next_friday = next_monday + timedelta(days=4)
-    return next_monday.strftime("%b %d, %Y"), next_friday.strftime("%b %d, %Y")
 
+    start_date_str = next_monday.strftime("%b %d, %Y")
+    end_date_str = next_friday.strftime("%b %d, %Y")
+
+    return start_date_str, end_date_str
+
+
+# =====================================================
+# MAIN EXECUTION
+# =====================================================
 
 booking_data = load_booking_data()
 START_DATE, END_DATE = get_next_week_range()
@@ -50,6 +77,10 @@ START_DATE, END_DATE = get_next_week_range()
 print("\n📅 Periode Booking Minggu Depan:")
 print(f"   Tanggal Mulai (Senin)  : {START_DATE}")
 print(f"   Tanggal Selesai (Jumat): {END_DATE}\n")
+
+# =====================================================
+# PLAYWRIGHT AUTOMATION
+# =====================================================
 
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
@@ -61,46 +92,38 @@ with sync_playwright() as p:
 
         page = browser.new_page()
 
-        # Array penampung log dialog murni beserta waktu penangkapan
-        captured_dialogs = []
+        uploading_alert_dismissed = {"status": False}
+        gas_network_finished = {"status": False}
 
-        # -------------------------------------------------
-        # TRACE 1: LISTENER DIALOG BROWSER (NATIVE ALERT)
-        # -------------------------------------------------
+        # 1. Listener Alert - Otomatis Accept jika muncul 'Uploading'
         def global_dialog_handler(dialog):
-            timestamp = datetime.now().strftime("%H:%M:%S")
-            raw_msg = dialog.message.strip()
-            print(f"🔍 [TRACE ALERT - {timestamp}]: '{raw_msg}'")
-            captured_dialogs.append(raw_msg)
+            msg = dialog.message.strip()
+            print(f"🔔 [ALERT DETECTED]: '{msg}'")
+
+            if (
+                "uploading" in msg.lower()
+                or "please wait" in msg.lower()
+                or "loading" in msg.lower()
+            ):
+                uploading_alert_dismissed["status"] = True
+
             dialog.accept()
 
         page.on("dialog", global_dialog_handler)
 
-        # -------------------------------------------------
-        # TRACE 2: LISTENER NETWORK RESPONSE (BACKEND GAS)
-        # -------------------------------------------------
-        network_responses = []
-
+        # 2. Listener Network - Deteksi saat transmisi data GAS selesai (Status 200)
         def handle_response(response):
-            # Mencegat balikan HTTP dari server Google Apps Script
-            if "google.com" in response.url or "exec" in response.url:
-                try:
-                    res_text = response.text()
-                    if res_text:
-                        timestamp = datetime.now().strftime("%H:%M:%S")
-                        print(
-                            f"📡 [TRACE NETWORK - {timestamp}]: (Status {response.status}) -> {res_text[:150]}..."
-                        )
-                        network_responses.append(res_text)
-                except Exception:
-                    pass
+            if "exec" in response.url or "google" in response.url:
+                if response.status == 200:
+                    gas_network_finished["status"] = True
 
         page.on("response", handle_response)
 
         try:
             page.goto(URL, wait_until="networkidle")
-            page.wait_for_timeout(random.randint(2000, 3000))
+            page.wait_for_timeout(2000)
 
+            # Cari Frame
             frame = None
             for f in page.frames:
                 if f.locator("#nik").count() > 0:
@@ -113,6 +136,7 @@ with sync_playwright() as p:
                 )
                 continue
 
+            # Input Form
             frame.locator("#nik").fill(user["NIK"])
             short_delay()
             frame.locator("#nama").fill(user["NAMA"])
@@ -124,6 +148,7 @@ with sync_playwright() as p:
 
             expect(frame.locator("#nik")).to_have_value(user["NIK"])
 
+            # Select Worksite
             frame.evaluate(
                 """
                 (site)=>{
@@ -141,19 +166,23 @@ with sync_playwright() as p:
                 user["WORKSITE"],
             )
 
-            page.wait_for_timeout(1500)
+            page.wait_for_timeout(1000)
 
+            # Set Tanggal & Trigger Check
             frame.evaluate(
                 """
                 (dates)=>{
                     const startInput = document.getElementById("meetingDate");
                     const endInput = document.getElementById("meetingEnd");
+
                     startInput.value = dates.start;
                     endInput.value = dates.end;
+
                     startInput.dispatchEvent(new Event("input", {bubbles:true}));
                     endInput.dispatchEvent(new Event("input", {bubbles:true}));
                     startInput.dispatchEvent(new Event("change", {bubbles:true}));
                     endInput.dispatchEvent(new Event("change", {bubbles:true}));
+
                     if(window.M) { M.updateTextFields(); }
                     checkRoom();
                 }
@@ -161,67 +190,47 @@ with sync_playwright() as p:
                 {"start": START_DATE, "end": END_DATE},
             )
 
-            page.wait_for_timeout(4000)
+            page.wait_for_timeout(5000)
 
-            status = frame.locator("#statusRuangan").inner_text()
+            status_text = frame.locator("#statusRuangan").inner_text().strip()
+            is_truly_available = (
+                "available" in status_text.lower()
+                and "not available" not in status_text.lower()
+            )
 
-            if "available" in status.lower():
-                print("🔘 Memicu Klik Tombol Submit...")
+            if is_truly_available:
+                print("🔘 Mengeklik Tombol Submit...")
+
+                # Reset status network sebelum memicu submit
+                gas_network_finished["status"] = False
+
                 frame.locator("#submit-reservation-detail").click(force=True)
 
-                raw_final_message = None
-
-                # Polling 20 detik mencari alert final yang bukan loading
-                for sec in range(1, 21):
+                # Polling tunggu proses pengunggahan selesai (Maksimal 15 Detik)
+                for _ in range(15):
                     page.wait_for_timeout(1000)
 
-                    # Periksa log alert terdeteksi
-                    for msg in reversed(captured_dialogs):
-                        msg_lower = msg.lower()
-                        if (
-                            "uploading" not in msg_lower
-                            and "please wait" not in msg_lower
-                        ):
-                            raw_final_message = msg
-                            break
-
-                    if raw_final_message:
+                    # Jika alert uploading sudah lewat DAN respon backend GAS selesai
+                    if (
+                        uploading_alert_dismissed["status"]
+                        or gas_network_finished["status"]
+                    ):
                         break
 
-                if raw_final_message:
-                    print(f"\n📣 RESPONSE FINAL : '{raw_final_message}'")
-                else:
-                    # -------------------------------------------------
-                    # TRACE 3: DIAGNOSIS JIKA TIMEOUT (DUMP HTML & LOGS)
-                    # -------------------------------------------------
-                    print("\n" + "⚠️ " * 15)
-                    print(
-                        "🔍 [TRACE TIMEOUT DIAGNOSIS]: Alert final tidak muncul setelah 20 detik."
-                    )
-                    print(
-                        f"🔹 Total Alert Browser Diterima : {len(captured_dialogs)} -> {captured_dialogs}"
-                    )
-                    print(f"🔹 Total Network Response     : {len(network_responses)}")
+                # Jeda 1 detik singkat agar elemen loading di layar menghilang total
+                page.wait_for_timeout(1000)
 
-                    # Inspeksi teks tersembunyi/modal di DOM Frame
-                    frame_text = frame.locator("body").inner_text()
-                    lines = [
-                        line.strip()
-                        for line in frame_text.split("\n")
-                        if line.strip()
-                    ]
-                    print(
-                        f"🔹 Teks Terakhir di Dalam Frame  : {lines[-5:] if len(lines)>=5 else lines}"
-                    )
-                    print("⚠️ " * 15 + "\n")
+                # 📸 LANGSUNG SCREENSHOT BEGITU UPLOADING KELAR
+                filename = f"booking_{user['NAMA']}_POST_UPLOAD.png"
+                page.screenshot(path=filename, full_page=True)
 
-                    print(
-                        "📣 RESPONSE FINAL : ❌ Timeout 20 detik! Teks alert tidak tertangkap."
-                    )
+                print(
+                    f"\n📣 RESPONSE FINAL : ✔ Upload selesai! Screenshot tersimpan: {filename}"
+                )
 
             else:
                 print(
-                    f"\n📣 RESPONSE FINAL : ❌ Ruangan Tidak Tersedia ({status})"
+                    f"\n📣 RESPONSE FINAL : ❌ Ruangan Tidak Tersedia ({status_text if status_text else 'Not Available'})"
                 )
 
         except Exception as e:
