@@ -8,7 +8,7 @@ URL = "https://script.google.com/a/macros/banksinarmas.com/s/AKfycbyGVQZaMoU4Q4H
 
 
 # =====================================================
-# RANDOM DELAY (HUMAN-LIKE)
+# random delay bro
 # =====================================================
 
 
@@ -23,7 +23,7 @@ def short_delay(min_ms=500, max_ms=1500):
 
 
 # =====================================================
-# LOAD BOOKING DATA
+# load booking data
 # =====================================================
 
 
@@ -49,7 +49,7 @@ def load_booking_data():
 
 
 # =====================================================
-# NEXT WEEK MONDAY & FRIDAY GENERATOR
+# generate senin - jumat minggu depan
 # =====================================================
 
 
@@ -67,7 +67,7 @@ def get_next_week_range():
 
 
 # =====================================================
-# MAIN DATA
+# main
 # =====================================================
 
 booking_data = load_booking_data()
@@ -81,7 +81,7 @@ results = []
 
 
 # =====================================================
-# PLAYWRIGHT
+# playwright
 # =====================================================
 
 with sync_playwright() as p:
@@ -97,7 +97,7 @@ with sync_playwright() as p:
         page.wait_for_timeout(random.randint(2000, 4000))
 
         # =================================================
-        # FIND FRAME
+        # cari frame
         # =================================================
 
         frame = None
@@ -113,7 +113,7 @@ with sync_playwright() as p:
             continue
 
         # =================================================
-        # INPUT FORM
+        # input form
         # =================================================
 
         frame.locator("#nik").fill(user["NIK"])
@@ -133,7 +133,7 @@ with sync_playwright() as p:
         print("✔ Form berhasil diisi")
 
         # =================================================
-        # WORKSITE
+        # pilih worksite
         # =================================================
 
         frame.evaluate(
@@ -158,7 +158,7 @@ with sync_playwright() as p:
         page.wait_for_timeout(random.randint(1000, 2500))
 
         # =================================================
-        # DATE SET (Monday to Friday)
+        # set tanggal (senin - jumat)
         # =================================================
 
         frame.evaluate(
@@ -189,7 +189,7 @@ with sync_playwright() as p:
         page.wait_for_timeout(random.randint(3000, 6000))
 
         # =================================================
-        # CHECK STATUS
+        # cek status ruangan
         # =================================================
 
         status = frame.locator("#statusRuangan").inner_text()
@@ -198,7 +198,7 @@ with sync_playwright() as p:
         page.wait_for_timeout(random.randint(6000, 10000))
 
         # =================================================
-        # BOOKING LOGIC
+        # logic booking
         # =================================================
 
         if "available" in status.lower():
@@ -224,7 +224,7 @@ with sync_playwright() as p:
 
         page.close()
 
-        # Jeda 15 detik sebelum membuka page baru untuk antrean/orang berikutnya
+        # Jeda 15 detik sebelum membuka page baru untuk orang berikutnya
         if idx < len(booking_data):
             print(
                 "⏳ Menunggu 15 detik sebelum membuka halaman baru untuk orang berikutnya..."
@@ -235,7 +235,7 @@ with sync_playwright() as p:
 
 
 # =====================================================
-# SUMMARY REPORT
+# summary report
 # =====================================================
 
 print("\n" + "=" * 60)
