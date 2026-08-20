@@ -224,12 +224,12 @@ with sync_playwright() as p:
 
         page.close()
 
-        # Jeda 30 detik sebelum membuka page baru untuk antrean/orang berikutnya
+        # Jeda 20 detik sebelum membuka page baru untuk antrean/orang berikutnya
         if idx < len(booking_data):
             print(
-                "⏳ Menunggu 30 detik sebelum membuka halaman baru untuk orang berikutnya..."
+                "⏳ Menunggu 20 detik sebelum membuka halaman baru untuk orang berikutnya..."
             )
-            time.sleep(30)
+            time.sleep(20)
 
     browser.close()
 
