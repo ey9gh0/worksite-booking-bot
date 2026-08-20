@@ -16,15 +16,13 @@ URL = "https://script.google.com/a/macros/banksinarmas.com/s/AKfycbyGVQZaMoU4Q4H
 
 def type_human(locator, text):
     """Mengetik teks karakter demi karakter dengan kecepatan acak ala manusia."""
-    locator.click()  # Fokus ke kolom dulu
-    time.sleep(random.uniform(0.2, 0.5))  # Jeda sejenak sebelum mengetik
-    locator.clear()  # Bersihkan kolom jika ada sisa teks
+    locator.click()
+    time.sleep(random.uniform(0.2, 0.5))
+    locator.clear()
 
-    # Ketik tiap huruf dengan jeda acak antara 80 ms sampai 220 ms
     for char in text:
         locator.press_sequentially(char, delay=random.randint(80, 220))
 
-    # Jeda kecil setelah selesai mengetik satu kolom
     time.sleep(random.uniform(0.3, 0.7))
 
 
@@ -89,18 +87,18 @@ with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
     total_data = len(booking_data)
 
+    # 🎥 KONTEN DIBUAT DILUAR LOOP (Hanya 1 Rekaman Video untuk Semua Data)
+    context = browser.new_context(
+        record_video_dir="videos/",
+        record_video_size={"width": 1280, "height": 720},
+    )
+    page = context.new_page()
+
+    # Auto accept semua alert
+    page.on("dialog", lambda dialog: dialog.accept())
+
     for idx, user in enumerate(booking_data, start=1):
-        print(f"[{idx}/{total_data}] Memproses & Merekam (Human Mode): {user['NAMA']}...")
-
-        # Merekam Video Browser HD
-        context = browser.new_context(
-            record_video_dir="videos/",
-            record_video_size={"width": 1280, "height": 720},
-        )
-        page = context.new_page()
-
-        # Auto accept semua alert
-        page.on("dialog", lambda dialog: dialog.accept())
+        print(f"[{idx}/{total_data}] Memproses: {user['NAMA']}...")
 
         try:
             page.goto(URL, wait_until="networkidle")
@@ -116,7 +114,7 @@ with sync_playwright() as p:
             if frame is None:
                 continue
 
-            # 2. Input Form Profil dengan Gaya Ketik Manusia (Humanized)
+            # 2. Input Form Profil (Humanized)
             type_human(frame.locator("#nik"), user["NIK"])
             type_human(frame.locator("#nama"), user["NAMA"])
             type_human(frame.locator("#divisi"), user["DIVISI"])
@@ -168,36 +166,36 @@ with sync_playwright() as p:
 
             page.wait_for_timeout(4000)
 
-            # 5. Jeda Manusia Sebelum Klik Submit
+            # 5. Jeda Sebelum Klik Submit
             time.sleep(random.uniform(1.0, 2.5))
 
             # 6. Klik Submit
             frame.locator("#submit-reservation-detail").click(force=True)
 
-            # Tunggu 5 detik agar rekaman menangkap respons submit
+            # Tunggu 5 detik agar rekaman menangkap proses upload
             page.wait_for_timeout(5000)
 
         except Exception as e:
             pass
 
-        finally:
-            video_obj = page.video
-            video_path_original = video_obj.path() if video_obj else None
+        # Jeda 10 detik antar pengguna (jeda ini AKAN terekam di dalam video)
+        if idx < total_data:
+            print("⏳ Jeda 10 detik sebelum ke data berikutnya (direkam)...")
+            time.sleep(10)
 
-            page.close()
-            context.close()
+    # SIMPAN REKAMAN TUNGGAL SETELAH SEMUA DATA SELESAI
+    video_obj = page.video
+    video_path_original = video_obj.path() if video_obj else None
 
-            # Simpan file video
-            if video_path_original and os.path.exists(video_path_original):
-                target_video_path = f"videos/booking_{user['NAMA']}.webm"
-                if os.path.exists(target_video_path):
-                    os.remove(target_video_path)
-                os.rename(video_path_original, target_video_path)
-
-            # Jeda acak antar pengguna (8-12 detik)
-            if idx < total_data:
-                time.sleep(random.uniform(8, 12))
-
+    page.close()
+    context.close()
     browser.close()
 
-print("\n✨ Seluruh eksekusi humanized dan rekaman video selesai disimpandi folder 'videos/'!")
+    # Ubah nama video gabungan menjadi nama yang rapi
+    if video_path_original and os.path.exists(video_path_original):
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        target_video_path = f"videos/booking_full_session_{timestamp}.webm"
+        os.rename(video_path_original, target_video_path)
+        print(f"\n🎥 Video Sesi Lengkap Tersimpan: {target_video_path}")
+
+print("\n✨ Seluruh eksekusi selesai!")
