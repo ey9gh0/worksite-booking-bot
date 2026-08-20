@@ -4,7 +4,7 @@ on:
   schedule:
     # Berjalan setiap hari Jumat jam 08:00 WIB (01:00 UTC)
     - cron: '0 1 * * 5'
-  workflow_dispatch: # Memungkinkan tombol run manual di GitHub UI
+  workflow_dispatch: # Tombol jalankan manual via GitHub Actions UI
 
 jobs:
   run-booking:
@@ -30,10 +30,10 @@ jobs:
           playwright install-deps
 
       - name: Run Booking Script
-        run: python main.py # Sesuaikan jika nama file kamu booking.py
+        run: python booking.py # Perbaikan nama file di sini
 
       - name: Upload Single Video Session Artifact
-        if: always() # Tetap simpan video meskipun script ada error
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: full-booking-video-session
