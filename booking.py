@@ -212,7 +212,7 @@ with sync_playwright() as p:
 
             random_delay(2, 5)
 
-            # Klik tombol submit
+            # klik tombol submit
             frame.locator("#submit-reservation-detail").click(force=True)
             print("✔ Submit diklik")
 
@@ -222,14 +222,17 @@ with sync_playwright() as p:
             print("✖ Room Not Available")
             results.append({"name": user["NAMA"], "status": "FAILED"})
 
-        page.close()
+        # jeda 15 detik
+        print("⏳ Menunggu 15 detik...")
+        time.sleep(15)
 
-        # Jeda 15 detik sebelum membuka page baru untuk orang berikutnya
-        if idx < len(booking_data):
-            print(
-                "⏳ Menunggu 15 detik sebelum membuka halaman baru untuk orang berikutnya..."
-            )
-            time.sleep(15)
+        # screenshot
+        filename = f"booking_{user['NAMA']}.png"
+        page.screenshot(path=filename, full_page=True)
+        print(f"📸 Screenshot tersimpan: {filename}")
+
+        # tutup page, persiapan ke orang berikutnya
+        page.close()
 
     browser.close()
 
