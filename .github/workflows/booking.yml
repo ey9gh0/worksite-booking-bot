@@ -1,42 +1,41 @@
-name: Worksite Booking Bot
+name: Auto Booking Worksite
 
 on:
-  workflow_dispatch:
-  #schedule:
-    # Kita pancing pakai menit ganjil (06:55 WIB / 23:55 UTC)
-    #- cron: '55 23 * * 1-5'
+  schedule:
+    # Contoh: Berjalan setiap hari Jumat jam 08:00 WIB (01:00 UTC)
+    - cron: '0 1 * * 5'
+  workflow_dispatch: # Memungkinkan kamu menjalankan script secara manual via GitHub UI
 
 jobs:
-  booking:
+  run-booking:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          python-version: "3.11"
+          python-version: '3.10'
 
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install openpyxl playwright
 
-      - name: Install Playwright Browser
+      - name: Install Playwright Browsers
         run: |
-          pip install playwright
-          playwright install --with-deps chromium
+          playwright install chromium
+          playwright install-deps
 
-      - name: Run Booking Bot
-        run: |
-          python booking.py
+      - name: Run Booking Script
+        run: python main.py # Sesuaikan dengan nama file python kamu
 
-      # 📸 TUGAS PENTING: MENGUNGGAH FILE SCREENSHOT KE GITHUB ARTIFACTS
-      - name: Upload Screenshot Artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
+      - name: Upload Video Recordings
+        if: always() # Tetap simpan video meskipun ada yang error/gagal
+        uses: actions/upload-artifact@v3
         with:
-          name: booking-screenshots
-          path: "*.png"
+          name: booking-videos
+          path: videos/
+          retention-days: 7 # Simpan file video selama 7 hari di GitHub
