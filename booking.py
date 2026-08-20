@@ -10,6 +10,25 @@ URL = "https://script.google.com/a/macros/banksinarmas.com/s/AKfycbyGVQZaMoU4Q4H
 
 
 # =====================================================
+# SIMULASI KETIK MANUSIA (HUMANIZE TYPE)
+# =====================================================
+
+
+def type_human(locator, text):
+    """Mengetik teks karakter demi karakter dengan kecepatan acak ala manusia."""
+    locator.click()  # Fokus ke kolom dulu
+    time.sleep(random.uniform(0.2, 0.5))  # Jeda sejenak sebelum mengetik
+    locator.clear()  # Bersihkan kolom jika ada sisa teks
+
+    # Ketik tiap huruf dengan jeda acak antara 80 ms sampai 220 ms
+    for char in text:
+        locator.press_sequentially(char, delay=random.randint(80, 220))
+
+    # Jeda kecil setelah selesai mengetik satu kolom
+    time.sleep(random.uniform(0.3, 0.7))
+
+
+# =====================================================
 # LOAD BOOKING DATA
 # =====================================================
 
@@ -71,7 +90,7 @@ with sync_playwright() as p:
     total_data = len(booking_data)
 
     for idx, user in enumerate(booking_data, start=1):
-        print(f"[{idx}/{total_data}] Memproses & Merekam: {user['NAMA']}...")
+        print(f"[{idx}/{total_data}] Memproses & Merekam (Human Mode): {user['NAMA']}...")
 
         # Merekam Video Browser HD
         context = browser.new_context(
@@ -80,14 +99,14 @@ with sync_playwright() as p:
         )
         page = context.new_page()
 
-        # Auto accept semua alert agar rekaman berjalan lancar
+        # Auto accept semua alert
         page.on("dialog", lambda dialog: dialog.accept())
 
         try:
             page.goto(URL, wait_until="networkidle")
-            page.wait_for_timeout(2000)
+            page.wait_for_timeout(random.randint(2000, 3500))
 
-            # Cari Frame
+            # 1. Cari Frame
             frame = None
             for f in page.frames:
                 if f.locator("#nik").count() > 0:
@@ -97,13 +116,15 @@ with sync_playwright() as p:
             if frame is None:
                 continue
 
-            # Input Form Profil
-            frame.locator("#nik").fill(user["NIK"])
-            frame.locator("#nama").fill(user["NAMA"])
-            frame.locator("#divisi").fill(user["DIVISI"])
-            frame.locator("#email").fill(user["EMAIL"])
+            # 2. Input Form Profil dengan Gaya Ketik Manusia (Humanized)
+            type_human(frame.locator("#nik"), user["NIK"])
+            type_human(frame.locator("#nama"), user["NAMA"])
+            type_human(frame.locator("#divisi"), user["DIVISI"])
+            type_human(frame.locator("#email"), user["EMAIL"])
 
-            # Select Worksite
+            time.sleep(random.uniform(0.5, 1.2))
+
+            # 3. Select Worksite
             frame.evaluate(
                 """
                 (site)=>{
@@ -121,7 +142,9 @@ with sync_playwright() as p:
                 user["WORKSITE"],
             )
 
-            # Set Tanggal
+            time.sleep(random.uniform(0.8, 1.5))
+
+            # 4. Set Tanggal
             frame.evaluate(
                 """
                 (dates)=>{
@@ -145,10 +168,13 @@ with sync_playwright() as p:
 
             page.wait_for_timeout(4000)
 
-            # Klik Submit
+            # 5. Jeda Manusia Sebelum Klik Submit
+            time.sleep(random.uniform(1.0, 2.5))
+
+            # 6. Klik Submit
             frame.locator("#submit-reservation-detail").click(force=True)
 
-            # Beri waktu 5 detik agar rekaman menangkap proses submit hingga selesai
+            # Tunggu 5 detik agar rekaman menangkap respons submit
             page.wait_for_timeout(5000)
 
         except Exception as e:
@@ -161,17 +187,17 @@ with sync_playwright() as p:
             page.close()
             context.close()
 
-            # Simpan file video dengan nama pengguna
+            # Simpan file video
             if video_path_original and os.path.exists(video_path_original):
                 target_video_path = f"videos/booking_{user['NAMA']}.webm"
                 if os.path.exists(target_video_path):
                     os.remove(target_video_path)
                 os.rename(video_path_original, target_video_path)
 
-            # Jeda 10 detik antar pengguna
+            # Jeda acak antar pengguna (8-12 detik)
             if idx < total_data:
-                time.sleep(10)
+                time.sleep(random.uniform(8, 12))
 
     browser.close()
 
-print("\n✨ Seluruh proses booking dan rekaman video selesai disimpandi folder 'videos/'!")
+print("\n✨ Seluruh eksekusi humanized dan rekaman video selesai disimpandi folder 'videos/'!")
