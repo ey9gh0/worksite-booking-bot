@@ -13,7 +13,7 @@ URL = "https://script.google.com/a/macros/banksinarmas.com/s/AKfycbyGVQZaMoU4Q4H
 # =====================================================
 
 
-def random_delay(min_sec=2, max_sec=7):
+def random_delay(min_sec=2, max_sec=5):
     delay = random.uniform(min_sec, max_sec)
     print(f"⏳ Delay {delay:.2f} detik...")
     time.sleep(delay)
@@ -99,9 +99,21 @@ with sync_playwright() as p:
 
         page = browser.new_page()
 
+        # Variabel penampung log alert untuk per-user
+        captured_dialogs = []
+
+        # Listener global untuk otomatis klik OK pada SETIAP alert agar browser tidak freeze
+        def global_dialog_handler(dialog):
+            msg = dialog.message.strip()
+            print(f"🔔 [ALERT DETECTED]: '{msg}'")
+            captured_dialogs.append(msg)
+            dialog.accept()
+
+        page.on("dialog", global_dialog_handler)
+
         try:
             page.goto(URL, wait_until="networkidle")
-            page.wait_for_timeout(random.randint(2000, 4000))
+            page.wait_for_timeout(random.randint(2000, 3000))
 
             # -------------------------------------------------
             # 1. CARI FRAME DI GOOGLE APPS SCRIPT
@@ -117,7 +129,6 @@ with sync_playwright() as p:
                 results.append(
                     {"name": user["NAMA"], "status": "FAILED (Frame Not Found)"}
                 )
-                page.close()
                 continue
 
             # -------------------------------------------------
@@ -160,7 +171,7 @@ with sync_playwright() as p:
                 user["WORKSITE"],
             )
 
-            page.wait_for_timeout(random.randint(1000, 2500))
+            page.wait_for_timeout(1500)
 
             # -------------------------------------------------
             # 4. SET TANGGAL (SENIN - JUMAT)
@@ -190,7 +201,7 @@ with sync_playwright() as p:
                 {"start": START_DATE, "end": END_DATE},
             )
 
-            page.wait_for_timeout(random.randint(3000, 6000))
+            page.wait_for_timeout(4000)
 
             # -------------------------------------------------
             # 5. CEK STATUS RUANGAN
@@ -198,125 +209,82 @@ with sync_playwright() as p:
             status = frame.locator("#statusRuangan").inner_text()
             print(f"Status Ketersediaan: {status}")
 
-            page.wait_for_timeout(random.randint(4000, 7000))
-
             # -------------------------------------------------
-            # 6. LOGIC SUBMIT + MULTI-ALERT HANDLING (MAX 20 DETIK)
+            # 6. SUBMIT & TUNGGU HINGGA SELESAI (MAX 20 DETIK)
             # -------------------------------------------------
             if "available" in status.lower():
                 print("✔ Ruangan Tersedia (Available)")
-                random_delay(2, 4)
+                random_delay(1, 3)
 
-                dialog_final_message = {"message": None}
+                # Klik Submit
+                frame.locator("#submit-reservation-detail").click(force=True)
+                print(
+                    "✔ Submit diklik, memantau proses booking (Maksimal 20 detik)..."
+                )
 
-                def handle_dialog(dialog):
-                    msg = dialog.message.strip()
-                    print(f"\n🔔 Alert Terdeteksi: '{msg}'")
+                final_status_found = False
+                final_message = ""
 
-                    # Abaikan alert loading ("uploading" / "please wait")
+                # Polling 20 detik untuk mencari alert/pesan final (bukan 'uploading')
+                for _ in range(20):
+                    page.wait_for_timeout(1000)
+
+                    # 1. Cek dari daftar alert yang berhasil ditangkap
+                    for msg in reversed(captured_dialogs):
+                        msg_lower = msg.lower()
+                        if (
+                            "uploading" not in msg_lower
+                            and "please wait" not in msg_lower
+                        ):
+                            final_message = msg
+                            final_status_found = True
+                            break
+
+                    if final_status_found:
+                        break
+
+                    # 2. Cek apakah ada perubahan teks di dalam HTML Frame
+                    frame_html = frame.content().lower()
                     if (
-                        "uploading" in msg.lower()
-                        or "please wait" in msg.lower()
+                        "succesfully booked" in frame_html
+                        or "successfully booked" in frame_html
+                    ):
+                        final_message = "Location succesfully booked!"
+                        final_status_found = True
+                        break
+
+                # Beri jeda 2 detik ekstra setelah alert hilang agar UI web benar-benar bersih saat di-screenshot
+                page.wait_for_timeout(2000)
+
+                filename = f"booking_{user['NAMA']}.png"
+                page.screenshot(path=filename, full_page=True)
+
+                if final_status_found:
+                    print(
+                        f"💬 RESPONS FINAL: '{final_message}' | Screenshot: {filename}"
+                    )
+                    if (
+                        "succesfully booked" in final_message.lower()
+                        or "successfully booked" in final_message.lower()
                     ):
                         print(
-                            "⏳ Alert loading terdeteksi, mengabaikan dan menunggu alert status akhir..."
+                            f"✔ Booking SUCCESS Verified untuk {user['NAMA']}"
                         )
-                        dialog.accept()
+                        results.append(
+                            {"name": user["NAMA"], "status": "SUCCESS"}
+                        )
                     else:
-                        # Tangkap pesan alert final/status akhir
-                        dialog_final_message["message"] = msg
-                        dialog.accept()
-
-                # Pasang listener dialog
-                page.on("dialog", handle_dialog)
-
-                try:
-                    # Klik Submit
-                    frame.locator("#submit-reservation-detail").click(
-                        force=True
-                    )
-                    print(
-                        "✔ Submit diklik, memantau respon server (Maksimal 20 detik)..."
-                    )
-
-                    actual_msg = None
-
-                    # Polling Maksimal 20 Detik (20 x 1 detik)
-                    for _ in range(20):
-                        page.wait_for_timeout(1000)
-
-                        # Opsi A: Alert final berhasil ditangkap oleh listener
-                        if dialog_final_message["message"]:
-                            actual_msg = dialog_final_message["message"]
-                            break
-
-                        # Opsi B: Pengecekan teks langsung jika berupa modal HTML di frame
-                        frame_html = frame.content().lower()
-                        if (
-                            "succesfully booked" in frame_html
-                            or "successfully booked" in frame_html
-                        ):
-                            actual_msg = "Location succesfully booked!"
-                            break
-                        elif (
-                            "already booked" in frame_html
-                            or "failed" in frame_html
-                        ):
-                            actual_msg = "Booking Failed"
-                            break
-
-                    # Lepas listener dialog
-                    page.remove_listener("dialog", handle_dialog)
-
-                    # Beri jeda 1.5 detik setelah alert final ditutup agar tampilan web ter-render sempurna
-                    page.wait_for_timeout(1500)
-
-                    # Ambil Screenshot hasil akhir
-                    filename = f"booking_{user['NAMA']}.png"
-                    page.screenshot(path=filename, full_page=True)
-
-                    # Evaluasi hasil
-                    if actual_msg:
-                        print(
-                            f"\n💬 RESPONS FINAL TERDETEKSI: '{actual_msg}' | Screenshot: {filename}"
-                        )
-                        actual_msg_lower = actual_msg.lower()
-
-                        if (
-                            "succesfully booked" in actual_msg_lower
-                            or "successfully booked" in actual_msg_lower
-                        ):
-                            print(
-                                f"✔ Booking SUCCESS Verified untuk {user['NAMA']}"
-                            )
-                            results.append(
-                                {"name": user["NAMA"], "status": "SUCCESS"}
-                            )
-                        else:
-                            print(
-                                f"✖ Booking Gagal! Respon Server: '{actual_msg}'"
-                            )
-                            results.append(
-                                {
-                                    "name": user["NAMA"],
-                                    "status": f"FAILED ({actual_msg})",
-                                }
-                            )
-                    else:
-                        print(
-                            "✖ Timeout 20 detik! Alert final tidak kunjung muncul."
-                        )
+                        print(f"✖ Booking Gagal! Respon: '{final_message}'")
                         results.append(
                             {
                                 "name": user["NAMA"],
-                                "status": "FAILED (Timeout 20s)",
+                                "status": f"FAILED ({final_message})",
                             }
                         )
-
-                except Exception as e:
-                    print(f"✖ Error saat proses submit: {e}")
+                else:
+                    print("✖ Timeout 20 detik! Tidak ada alert status akhir.")
                     results.append(
-                        {"name": user["NAMA"], "status": f"FAILED ({e})"}
+                        {"name": user["NAMA"], "status": "FAILED (Timeout 20s)"}
                     )
 
             else:
@@ -330,12 +298,13 @@ with sync_playwright() as p:
                 )
 
         except Exception as e:
-            print(f"✖ Terjadi error tak terduga pada user {user['NAMA']}: {e}")
+            print(f"✖ Terjadi error pada user {user['NAMA']}: {e}")
             results.append(
                 {"name": user["NAMA"], "status": f"FAILED (System Error: {e})"}
             )
 
         finally:
+            # PENTING: Tutup page di 'finally' agar iterasi data berikutnya PASTI berjalan
             page.close()
 
     browser.close()
