@@ -92,38 +92,21 @@ with sync_playwright() as p:
 
         page = browser.new_page()
 
-        uploading_alert_dismissed = {"status": False}
-        gas_network_finished = {"status": False}
+        # Flag penanda bahwa alert browser (Uploading...) sudah diklik OK
+        alert_dismissed = {"status": False}
 
-        # 1. Listener Alert - Otomatis Accept jika muncul 'Uploading'
-        def global_dialog_handler(dialog):
-            msg = dialog.message.strip()
-            print(f"🔔 [ALERT DETECTED]: '{msg}'")
-
-            if (
-                "uploading" in msg.lower()
-                or "please wait" in msg.lower()
-                or "loading" in msg.lower()
-            ):
-                uploading_alert_dismissed["status"] = True
-
+        def handle_dialog(dialog):
+            print(f"🔔 Alert Muncul: '{dialog.message.strip()}' -> Auto Click OK")
+            alert_dismissed["status"] = True
             dialog.accept()
 
-        page.on("dialog", global_dialog_handler)
-
-        # 2. Listener Network - Deteksi saat transmisi data GAS selesai (Status 200)
-        def handle_response(response):
-            if "exec" in response.url or "google" in response.url:
-                if response.status == 200:
-                    gas_network_finished["status"] = True
-
-        page.on("response", handle_response)
+        page.on("dialog", handle_dialog)
 
         try:
             page.goto(URL, wait_until="networkidle")
             page.wait_for_timeout(2000)
 
-            # Cari Frame
+            # 1. Cari Frame
             frame = None
             for f in page.frames:
                 if f.locator("#nik").count() > 0:
@@ -131,12 +114,10 @@ with sync_playwright() as p:
                     break
 
             if frame is None:
-                print(
-                    "📣 RESPONSE FINAL : ❌ Form booking tidak ditemukan (Frame Error)"
-                )
+                print("❌ Frame tidak ditemukan, melewati user ini...")
                 continue
 
-            # Input Form
+            # 2. Input Form
             frame.locator("#nik").fill(user["NIK"])
             short_delay()
             frame.locator("#nama").fill(user["NAMA"])
@@ -148,7 +129,7 @@ with sync_playwright() as p:
 
             expect(frame.locator("#nik")).to_have_value(user["NIK"])
 
-            # Select Worksite
+            # 3. Select Worksite
             frame.evaluate(
                 """
                 (site)=>{
@@ -168,7 +149,7 @@ with sync_playwright() as p:
 
             page.wait_for_timeout(1000)
 
-            # Set Tanggal & Trigger Check
+            # 4. Set Tanggal & Trigger Cek Ruangan
             frame.evaluate(
                 """
                 (dates)=>{
@@ -190,61 +171,39 @@ with sync_playwright() as p:
                 {"start": START_DATE, "end": END_DATE},
             )
 
+            # Tunggu 5 detik agar status ruangan selesai diproses
             page.wait_for_timeout(5000)
 
-            status_text = frame.locator("#statusRuangan").inner_text().strip()
-            is_truly_available = (
-                "available" in status_text.lower()
-                and "not available" not in status_text.lower()
-            )
+            # 5. Klik Submit
+            print("🔘 Mengeklik Tombol Submit...")
+            frame.locator("#submit-reservation-detail").click(force=True)
 
-            if is_truly_available:
-                print("🔘 Mengeklik Tombol Submit...")
-
-                # Reset status network sebelum memicu submit
-                gas_network_finished["status"] = False
-
-                frame.locator("#submit-reservation-detail").click(force=True)
-
-                # Polling tunggu proses pengunggahan selesai (Maksimal 15 Detik)
-                for _ in range(15):
-                    page.wait_for_timeout(1000)
-
-                    # Jika alert uploading sudah lewat DAN respon backend GAS selesai
-                    if (
-                        uploading_alert_dismissed["status"]
-                        or gas_network_finished["status"]
-                    ):
-                        break
-
-                # Jeda 1 detik singkat agar elemen loading di layar menghilang total
+            # 6. Tunggu hingga alert "Uploading" muncul & ditutup (Maksimal 10 detik)
+            for _ in range(10):
                 page.wait_for_timeout(1000)
+                if alert_dismissed["status"]:
+                    break
 
-                # 📸 LANGSUNG SCREENSHOT BEGITU UPLOADING KELAR
-                filename = f"booking_{user['NAMA']}_POST_UPLOAD.png"
-                page.screenshot(path=filename, full_page=True)
+            # Beri jeda 3 detik setelah alert ditutup agar upload backend selesai & UI ter-update
+            print("⏳ Menunggu proses upload selesai di latar belakang...")
+            page.wait_for_timeout(3000)
 
-                print(
-                    f"\n📣 RESPONSE FINAL : ✔ Upload selesai! Screenshot tersimpan: {filename}"
-                )
-
-            else:
-                print(
-                    f"\n📣 RESPONSE FINAL : ❌ Ruangan Tidak Tersedia ({status_text if status_text else 'Not Available'})"
-                )
+            # 7. LANGSUNG SCREENSHOT DILAKUKAN DI SINI
+            filename = f"booking_{user['NAMA']}.png"
+            page.screenshot(path=filename, full_page=True)
+            print(f"📸 Screenshot Berhasil Tersimpan: {filename}")
 
         except Exception as e:
-            print(f"\n📣 RESPONSE FINAL : ❌ System Error: {e}")
+            print(f"❌ Terjadi Error: {e}")
 
         finally:
             page.close()
 
+            # Jeda 10 detik sebelum lanjut ke data orang berikutnya
             if idx < total_data:
-                print(
-                    "\n⏳ Menunggu jeda 10 detik sebelum lanjut ke data berikutnya..."
-                )
+                print("⏳ Menunggu jeda 10 detik sebelum lanjut ke orang berikutnya...")
                 time.sleep(10)
 
     browser.close()
 
-print("\n✨ Seluruh eksekusi selesai!")
+print("\n✨ Seluruh eksekusi dan screenshot selesai!")
