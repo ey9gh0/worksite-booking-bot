@@ -198,80 +198,76 @@ with sync_playwright() as p:
         page.wait_for_timeout(random.randint(6000, 10000))
 
         # =================================================
-        # LOGIC BOOKING + SCREENSHOT ON POP-UP
+        # LOGIC BOOKING (INSTANT EVENT-BASED)
         # =================================================
 
         if "available" in status.lower():
             print("✔ Room Available")
 
-            alert_received = {"text": None}
+            random_delay(2, 5)
 
-            # Handler khusus untuk tangkap layar tepat saat pop-up muncul
-            def handle_dialog(dialog):
-                msg = dialog.message.strip()
-                print(f"💬 ALERT DETECTED: '{msg}'")
-                alert_received["text"] = msg
+            try:
+                # Menunggu event dialog muncul secara dinamis saat klik submit (timeout 15s jika server error)
+                with page.expect_event("dialog", timeout=15000) as dialog_info:
+                    frame.locator("#submit-reservation-detail").click(
+                        force=True
+                    )
+                    print("✔ Submit diklik, menunggu pop-up muncul...")
+
+                dialog = dialog_info.value
+                actual_msg = dialog.message.strip()
+                print(f"💬 ALERT DETECTED: '{actual_msg}'")
 
                 # 📸 SCREENSHOT TEPAT SAAT POP-UP TAMPIL
                 filename = f"booking_{user['NAMA']}.png"
-                try:
-                    page.screenshot(path=filename, full_page=True)
-                    print(
-                        f"📸 Screenshot pop-up berhasil tersimpan: {filename}"
-                    )
-                except Exception as e:
-                    print(f"⚠️ Gagal mengambil screenshot dialog: {e}")
+                page.screenshot(path=filename, full_page=True)
+                print(f"📸 Screenshot pop-up berhasil tersimpan: {filename}")
 
-                # Tutup dialog alert
+                # Tutup dialog alert setelah screenshot diambil
                 dialog.accept()
 
-            page.on("dialog", handle_dialog)
+                # Evaluasi kata kunci sukses
+                actual_msg_lower = actual_msg.lower()
+                success_keywords = [
+                    "succesfully",
+                    "successfully",
+                    "booked",
+                    "berhasil",
+                ]
+                is_success = any(
+                    kw in actual_msg_lower for kw in success_keywords
+                )
 
-            random_delay(2, 5)
+                if is_success:
+                    print(
+                        f"✔ Booking Success Verified (Alert: '{actual_msg}')"
+                    )
+                    results.append({"name": user["NAMA"], "status": "SUCCESS"})
+                else:
+                    print(f"✖ Booking Gagal! Alert terdeteksi: '{actual_msg}'")
+                    results.append(
+                        {
+                            "name": user["NAMA"],
+                            "status": "FAILED (Server Reject)",
+                        }
+                    )
 
-            # Klik tombol submit
-            frame.locator("#submit-reservation-detail").click(force=True)
-            print("✔ Submit berhasil diklik")
-
-            # Verifikasi kata kunci sukses
-            actual_msg = alert_received["text"]
-            actual_msg_lower = (actual_msg or "").lower()
-
-            success_keywords = [
-                "succesfully",
-                "successfully",
-                "booked",
-                "berhasil",
-            ]
-            is_success = any(
-                kw in actual_msg_lower for kw in success_keywords
-            )
-
-            if is_success:
-                print(f"✔ Booking Success Verified (Alert: '{actual_msg}')")
-                results.append({"name": user["NAMA"], "status": "SUCCESS"})
-            else:
+            except Exception as e:
                 print(
-                    f"✖ Booking Gagal! Alert terdeteksi: '{actual_msg or 'Tidak Ada Alert'}'"
+                    f"✖ Booking Gagal/Timeout! Pop-up tidak muncul dalam 15s. Error: {e}"
                 )
                 results.append(
-                    {"name": user["NAMA"], "status": "FAILED (Server Reject)"}
+                    {"name": user["NAMA"], "status": "FAILED (No Pop-up)"}
                 )
-
-                # Backup screenshot jika alert tidak pernah muncul
-                if actual_msg is None:
-                    page.screenshot(
-                        path=f"booking_{user['NAMA']}_NO_ALERT.png",
-                        full_page=True,
-                    )
+                page.screenshot(
+                    path=f"booking_{user['NAMA']}_TIMEOUT.png", full_page=True
+                )
 
         else:
             print("✖ Room Not Available")
             results.append(
                 {"name": user["NAMA"], "status": "FAILED (Not Available)"}
             )
-
-            # Screenshot kondisi gagal karena room not available
             page.screenshot(
                 path=f"booking_{user['NAMA']}_UNAVAILABLE.png", full_page=True
             )
