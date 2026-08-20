@@ -8,7 +8,7 @@ URL = "https://script.google.com/a/macros/banksinarmas.com/s/AKfycbyGVQZaMoU4Q4H
 
 
 # =====================================================
-# random delay bro
+# RANDOM DELAY
 # =====================================================
 
 
@@ -23,7 +23,7 @@ def short_delay(min_ms=500, max_ms=1500):
 
 
 # =====================================================
-# load booking data
+# LOAD BOOKING DATA
 # =====================================================
 
 
@@ -49,7 +49,7 @@ def load_booking_data():
 
 
 # =====================================================
-# generate senin - jumat minggu depan
+# GENERATE SENIN - JUMAT MINGGU DEPAN
 # =====================================================
 
 
@@ -67,7 +67,7 @@ def get_next_week_range():
 
 
 # =====================================================
-# main
+# MAIN
 # =====================================================
 
 booking_data = load_booking_data()
@@ -81,7 +81,7 @@ results = []
 
 
 # =====================================================
-# playwright
+# PLAYWRIGHT
 # =====================================================
 
 with sync_playwright() as p:
@@ -97,7 +97,7 @@ with sync_playwright() as p:
         page.wait_for_timeout(random.randint(2000, 4000))
 
         # =================================================
-        # cari frame
+        # CARI FRAME
         # =================================================
 
         frame = None
@@ -113,7 +113,7 @@ with sync_playwright() as p:
             continue
 
         # =================================================
-        # input form
+        # INPUT FORM
         # =================================================
 
         frame.locator("#nik").fill(user["NIK"])
@@ -133,7 +133,7 @@ with sync_playwright() as p:
         print("✔ Form berhasil diisi")
 
         # =================================================
-        # pilih worksite
+        # PILIH WORKSITE
         # =================================================
 
         frame.evaluate(
@@ -158,7 +158,7 @@ with sync_playwright() as p:
         page.wait_for_timeout(random.randint(1000, 2500))
 
         # =================================================
-        # set tanggal (senin - jumat)
+        # SET TANGGAL (SENIN - JUMAT)
         # =================================================
 
         frame.evaluate(
@@ -189,7 +189,7 @@ with sync_playwright() as p:
         page.wait_for_timeout(random.randint(3000, 6000))
 
         # =================================================
-        # cek status ruangan
+        # CEK STATUS RUANGAN
         # =================================================
 
         status = frame.locator("#statusRuangan").inner_text()
@@ -198,14 +198,31 @@ with sync_playwright() as p:
         page.wait_for_timeout(random.randint(6000, 10000))
 
         # =================================================
-        # logic booking
+        # LOGIC BOOKING + SCREENSHOT ON POP-UP
         # =================================================
 
         if "available" in status.lower():
             print("✔ Room Available")
 
+            alert_received = {"text": None}
+
+            # Handler khusus untuk tangkap layar tepat saat pop-up muncul
             def handle_dialog(dialog):
-                print("ALERT:", dialog.message)
+                msg = dialog.message.strip()
+                print(f"💬 ALERT DETECTED: '{msg}'")
+                alert_received["text"] = msg
+
+                # 📸 SCREENSHOT TEPAT SAAT POP-UP TAMPIL
+                filename = f"booking_{user['NAMA']}.png"
+                try:
+                    page.screenshot(path=filename, full_page=True)
+                    print(
+                        f"📸 Screenshot pop-up berhasil tersimpan: {filename}"
+                    )
+                except Exception as e:
+                    print(f"⚠️ Gagal mengambil screenshot dialog: {e}")
+
+                # Tutup dialog alert
                 dialog.accept()
 
             page.on("dialog", handle_dialog)
@@ -216,29 +233,62 @@ with sync_playwright() as p:
             frame.locator("#submit-reservation-detail").click(force=True)
             print("✔ Submit diklik")
 
-            results.append({"name": user["NAMA"], "status": "SUCCESS"})
+            # Jeda 15 detik untuk menunggu pemrosesan server dan memastikan event dialog selesai
+            print("⏳ Menunggu 15 detik respons server...")
+            time.sleep(15)
+
+            # Verifikasi kata kunci sukses
+            actual_msg = alert_received["text"]
+            actual_msg_lower = (actual_msg or "").lower()
+
+            success_keywords = [
+                "succesfully",
+                "successfully",
+                "booked",
+                "berhasil",
+            ]
+            is_success = any(
+                kw in actual_msg_lower for kw in success_keywords
+            )
+
+            if is_success:
+                print(f"✔ Booking Success Verified (Alert: '{actual_msg}')")
+                results.append({"name": user["NAMA"], "status": "SUCCESS"})
+            else:
+                print(
+                    f"✖ Booking Gagal! Alert terdeteksi: '{actual_msg or 'Tidak Ada Alert'}'"
+                )
+                results.append(
+                    {"name": user["NAMA"], "status": "FAILED (Server Reject)"}
+                )
+
+                # Backup screenshot jika alert tidak pernah muncul
+                if actual_msg is None:
+                    page.screenshot(
+                        path=f"booking_{user['NAMA']}_NO_ALERT.png",
+                        full_page=True,
+                    )
 
         else:
             print("✖ Room Not Available")
-            results.append({"name": user["NAMA"], "status": "FAILED"})
+            results.append(
+                {"name": user["NAMA"], "status": "FAILED (Not Available)"}
+            )
 
-        # Jeda 15 detik setelah submit sebelum mengambil screenshot
-        print("⏳ Menunggu 15 detik...")
-        time.sleep(15)
+            # Screenshot kondisi gagal karena room not available
+            page.screenshot(
+                path=f"booking_{user['NAMA']}_UNAVAILABLE.png", full_page=True
+            )
+            print("⏳ Menunggu 15 detik...")
+            time.sleep(15)
 
-        # 📸 SCREENSHOT DILAKUKAN DI SINI (SETELAH JEDA 15 DETIK)
-        filename = f"booking_{user['NAMA']}.png"
-        page.screenshot(path=filename, full_page=True)
-        print(f"📸 Screenshot tersimpan: {filename}")
-
-        # Tutup halaman untuk persiapan ke orang berikutnya
         page.close()
 
     browser.close()
 
 
 # =====================================================
-# summary report
+# SUMMARY REPORT
 # =====================================================
 
 print("\n" + "=" * 60)
@@ -249,7 +299,7 @@ success = 0
 failed = 0
 
 for r in results:
-    print(f"{r['status']:<12} {r['name']}")
+    print(f"{r['status']:<25} {r['name']}")
 
     if r["status"] == "SUCCESS":
         success += 1
