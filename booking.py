@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 import random
+import sys
 import time
 from openpyxl import load_workbook
 from playwright.sync_api import expect, sync_playwright
@@ -8,13 +9,13 @@ URL = "https://script.google.com/a/macros/banksinarmas.com/s/AKfycbyGVQZaMoU4Q4H
 
 
 # =====================================================
-# RANDOM DELAY
+# RANDOM DELAY FUNCTIONS
 # =====================================================
 
 
 def random_delay(min_sec=2, max_sec=7):
     delay = random.uniform(min_sec, max_sec)
-    print(f"⏳ Delay {delay:.2f} seconds...")
+    print(f"⏳ Delay {delay:.2f} detik...")
     time.sleep(delay)
 
 
@@ -28,22 +29,28 @@ def short_delay(min_ms=500, max_ms=1500):
 
 
 def load_booking_data():
-    wb = load_workbook("booking.xlsx")
-    ws = wb.active
+    try:
+        wb = load_workbook("booking.xlsx")
+    except FileNotFoundError:
+        print("❌ Error: File 'booking.xlsx' tidak ditemukan.")
+        sys.exit(1)
 
+    ws = wb.active
     data = []
 
     for row in ws.iter_rows(min_row=2, values_only=True):
         if all(cell is None for cell in row):
             continue
 
-        data.append({
-            "NIK": str(row[0]).strip(),
-            "NAMA": str(row[1]).strip(),
-            "DIVISI": str(row[2]).strip(),
-            "EMAIL": str(row[3]).strip(),
-            "WORKSITE": str(row[4]).strip(),
-        })
+        data.append(
+            {
+                "NIK": str(row[0]).strip(),
+                "NAMA": str(row[1]).strip(),
+                "DIVISI": str(row[2]).strip(),
+                "EMAIL": str(row[3]).strip(),
+                "WORKSITE": str(row[4]).strip(),
+            }
+        )
 
     return data
 
@@ -55,6 +62,7 @@ def load_booking_data():
 
 def get_next_week_range():
     today = datetime.today().date()
+    # Menghitung jarak ke hari Senin minggu depan
     days_until_next_monday = 7 - today.weekday()
 
     next_monday = today + timedelta(days=days_until_next_monday)
@@ -67,21 +75,20 @@ def get_next_week_range():
 
 
 # =====================================================
-# MAIN
+# MAIN EXECUTION
 # =====================================================
 
 booking_data = load_booking_data()
 START_DATE, END_DATE = get_next_week_range()
 
-print("\n📅 Booking Periode Minggu Depan:")
-print(f"   Tanggal Mulai (Senin) : {START_DATE}")
+print("\n📅 Periode Booking Minggu Depan:")
+print(f"   Tanggal Mulai (Senin)  : {START_DATE}")
 print(f"   Tanggal Selesai (Jumat): {END_DATE}\n")
 
 results = []
 
-
 # =====================================================
-# PLAYWRIGHT
+# PLAYWRIGHT AUTOMATION
 # =====================================================
 
 with sync_playwright() as p:
@@ -89,199 +96,199 @@ with sync_playwright() as p:
 
     for idx, user in enumerate(booking_data, start=1):
         print("\n" + "=" * 60)
-        print(f"[{idx}/{len(booking_data)}] Booking : {user['NAMA']}")
+        print(f"[{idx}/{len(booking_data)}] Processing Booking : {user['NAMA']}")
 
         page = browser.new_page()
 
-        page.goto(URL, wait_until="networkidle")
-        page.wait_for_timeout(random.randint(2000, 4000))
+        try:
+            page.goto(URL, wait_until="networkidle")
+            page.wait_for_timeout(random.randint(2000, 4000))
 
-        # =================================================
-        # CARI FRAME
-        # =================================================
+            # -------------------------------------------------
+            # 1. CARI FRAME DI GOOGLE APPS SCRIPT
+            # -------------------------------------------------
+            frame = None
+            for f in page.frames:
+                if f.locator("#nik").count() > 0:
+                    frame = f
+                    break
 
-        frame = None
-        for f in page.frames:
-            if f.locator("#nik").count() > 0:
-                frame = f
-                break
+            if frame is None:
+                print("❌ Form booking tidak ditemukan di dalam frame.")
+                results.append(
+                    {"name": user["NAMA"], "status": "FAILED (Frame Not Found)"}
+                )
+                page.close()
+                continue
 
-        if frame is None:
-            print("❌ Form booking tidak ditemukan.")
-            results.append({"name": user["NAMA"], "status": "FAILED (Frame)"})
-            page.close()
-            continue
+            # -------------------------------------------------
+            # 2. INPUT DATA UTAMA
+            # -------------------------------------------------
+            frame.locator("#nik").fill(user["NIK"])
+            short_delay()
 
-        # =================================================
-        # INPUT FORM
-        # =================================================
+            frame.locator("#nama").fill(user["NAMA"])
+            short_delay()
 
-        frame.locator("#nik").fill(user["NIK"])
-        short_delay()
+            frame.locator("#divisi").fill(user["DIVISI"])
+            short_delay()
 
-        frame.locator("#nama").fill(user["NAMA"])
-        short_delay()
+            frame.locator("#email").fill(user["EMAIL"])
+            short_delay()
 
-        frame.locator("#divisi").fill(user["DIVISI"])
-        short_delay()
+            expect(frame.locator("#nik")).to_have_value(user["NIK"])
+            print("✔ Form profil berhasil diisi")
 
-        frame.locator("#email").fill(user["EMAIL"])
-        short_delay()
-
-        expect(frame.locator("#nik")).to_have_value(user["NIK"])
-
-        print("✔ Form berhasil diisi")
-
-        # =================================================
-        # PILIH WORKSITE
-        # =================================================
-
-        frame.evaluate(
-            """
-            (site)=>{
-                const select=document.querySelector("#workSite");
-                for(const opt of select.options){
-                    if(opt.text.trim()==site){
-                        select.value=opt.value || opt.text;
-                        break;
+            # -------------------------------------------------
+            # 3. PILIH WORKSITE
+            # -------------------------------------------------
+            frame.evaluate(
+                """
+                (site)=>{
+                    const select = document.querySelector("#workSite");
+                    for(const opt of select.options){
+                        if(opt.text.trim() == site){
+                            select.value = opt.value || opt.text;
+                            break;
+                        }
+                    }
+                    select.dispatchEvent(new Event("change", {bubbles:true}));
+                    if(window.M){
+                        M.FormSelect.init(select);
                     }
                 }
-                select.dispatchEvent(new Event("change",{bubbles:true}));
-                if(window.M){
-                    M.FormSelect.init(select);
+                """,
+                user["WORKSITE"],
+            )
+
+            page.wait_for_timeout(random.randint(1000, 2500))
+
+            # -------------------------------------------------
+            # 4. SET TANGGAL (SENIN - JUMAT)
+            # -------------------------------------------------
+            frame.evaluate(
+                """
+                (dates)=>{
+                    const startInput = document.getElementById("meetingDate");
+                    const endInput = document.getElementById("meetingEnd");
+
+                    startInput.value = dates.start;
+                    endInput.value = dates.end;
+
+                    startInput.dispatchEvent(new Event("input", {bubbles:true}));
+                    endInput.dispatchEvent(new Event("input", {bubbles:true}));
+
+                    startInput.dispatchEvent(new Event("change", {bubbles:true}));
+                    endInput.dispatchEvent(new Event("change", {bubbles:true}));
+
+                    if(window.M) {
+                        M.updateTextFields();
+                    }
+
+                    checkRoom();
                 }
-            }
-            """,
-            user["WORKSITE"],
-        )
+                """,
+                {"start": START_DATE, "end": END_DATE},
+            )
 
-        page.wait_for_timeout(random.randint(1000, 2500))
+            page.wait_for_timeout(random.randint(3000, 6000))
 
-        # =================================================
-        # SET TANGGAL (SENIN - JUMAT)
-        # =================================================
+            # -------------------------------------------------
+            # 5. CEK STATUS RUANGAN
+            # -------------------------------------------------
+            status = frame.locator("#statusRuangan").inner_text()
+            print(f"Status Ketersediaan: {status}")
 
-        frame.evaluate(
-            """
-            (dates)=>{
-                const startInput = document.getElementById("meetingDate");
-                const endInput = document.getElementById("meetingEnd");
+            page.wait_for_timeout(random.randint(4000, 7000))
 
-                startInput.value = dates.start;
-                endInput.value = dates.end;
+            # -------------------------------------------------
+            # 6. LOGIC SUBMIT + VALIDASI ALERT
+            # -------------------------------------------------
+            if "available" in status.lower():
+                print("✔ Ruangan Tersedia (Available)")
 
-                startInput.dispatchEvent(new Event("input",{bubbles:true}));
-                endInput.dispatchEvent(new Event("input",{bubbles:true}));
+                random_delay(2, 4)
 
-                startInput.dispatchEvent(new Event("change",{bubbles:true}));
-                endInput.dispatchEvent(new Event("change",{bubbles:true}));
+                try:
+                    # Menunggu event 'dialog' terpicu saat tombol submit diklik
+                    with page.expect_event(
+                        "dialog", timeout=20000
+                    ) as dialog_info:
+                        frame.locator("#submit-reservation-detail").click(
+                            force=True
+                        )
+                        print(
+                            "✔ Submit diklik, menunggu balikan dari server..."
+                        )
 
-                if(window.M) {
-                    M.updateTextFields();
-                }
+                    dialog = dialog_info.value
+                    actual_msg = dialog.message.strip()
 
-                checkRoom();
-            }
-            """,
-            {"start": START_DATE, "end": END_DATE},
-        )
+                    print("\n" + "🔔" * 20)
+                    print(f" 💬 TEKS ALERT SERVER: '{actual_msg}'")
+                    print("🔔" * 20 + "\n")
 
-        page.wait_for_timeout(random.randint(3000, 6000))
+                    # Klik OK pada alert
+                    dialog.accept()
 
-        # =================================================
-        # CEK STATUS RUANGAN
-        # =================================================
+                    page.wait_for_timeout(2000)
 
-        status = frame.locator("#statusRuangan").inner_text()
-        print(f"Status: {status}")
+                    # Simpan Screenshot bukti
+                    filename = f"booking_{user['NAMA']}.png"
+                    page.screenshot(path=filename, full_page=True)
+                    print(f"📸 Screenshot tersimpan: {filename}")
 
-        page.wait_for_timeout(random.randint(6000, 10000))
-
-        # =================================================
-        # LOGIC BOOKING + DYNAMIC ALERT WAITING
-        # =================================================
-
-        if "available" in status.lower():
-            print("✔ Room Available")
-
-            random_delay(2, 5)
-
-            try:
-                # ⏳ Menunggu event 'dialog' terpicu secara dinamis saat tombol diklik (maksimal tunggu 20 detik)
-                with page.expect_event("dialog", timeout=20000) as dialog_info:
-                    frame.locator("#submit-reservation-detail").click(
-                        force=True
+                    # Pengecekan Eksak untuk Teks Sukses
+                    actual_msg_lower = actual_msg.lower()
+                    is_exact_success = (
+                        "location succesfully booked!" in actual_msg_lower
+                        or "location successfully booked!" in actual_msg_lower
                     )
+
+                    if is_exact_success:
+                        print(f"✔ Booking SUCCESS Verified untuk {user['NAMA']}")
+                        results.append(
+                            {"name": user["NAMA"], "status": "SUCCESS"}
+                        )
+                    else:
+                        print(f"✖ Booking Gagal! Respon Alert: '{actual_msg}'")
+                        results.append(
+                            {
+                                "name": user["NAMA"],
+                                "status": f"FAILED (Alert: {actual_msg})",
+                            }
+                        )
+
+                except Exception as e:
                     print(
-                        "✔ Submit diklik, menunggu respons server Google Apps Script..."
+                        f"✖ Timeout / Error saat menunggu alert server. Detail: {e}"
                     )
-
-                # Ambil objek dialog saat pop-up balikan muncul
-                dialog = dialog_info.value
-                actual_msg = dialog.message.strip()
-
-                print("\n" + "🔔" * 20)
-                print(f" 💬 TEKS POP-UP POP-UP SERVER: '{actual_msg}'")
-                print("🔔" * 20 + "\n")
-
-                # Klik 'OK' pada alert
-                dialog.accept()
-
-                # Beri jeda 2 detik agar halaman merespons penutupan alert
-                page.wait_for_timeout(2000)
-
-                # 📸 Screenshot hasil akhir halaman web
-                filename = f"booking_{user['NAMA']}.png"
-                page.screenshot(path=filename, full_page=True)
-                print(f"📸 Screenshot tersimpan: {filename}")
-
-                # Evaluasi kata kunci sukses
-                actual_msg_lower = actual_msg.lower()
-                success_keywords = [
-                    "succesfully",
-                    "successfully",
-                    "booked",
-                    "berhasil",
-                ]
-                is_success = any(
-                    kw in actual_msg_lower for kw in success_keywords
-                )
-
-                if is_success:
-                    print(
-                        f"✔ Booking Success Verified (Alert: '{actual_msg}')"
-                    )
-                    results.append({"name": user["NAMA"], "status": "SUCCESS"})
-                else:
-                    print(f"✖ Booking Gagal! Alert terdeteksi: '{actual_msg}'")
                     results.append(
-                        {
-                            "name": user["NAMA"],
-                            "status": "FAILED (Server Reject)",
-                        }
+                        {"name": user["NAMA"], "status": "FAILED (No Pop-up)"}
+                    )
+                    page.screenshot(
+                        path=f"booking_{user['NAMA']}_TIMEOUT.png",
+                        full_page=True,
                     )
 
-            except Exception as e:
-                print(
-                    f"✖ Timeout 20 detik! Server tidak memberikan balikan alert. Error: {e}"
-                )
+            else:
+                print("✖ Ruangan Tidak Tersedia (Not Available)")
                 results.append(
-                    {"name": user["NAMA"], "status": "FAILED (No Pop-up)"}
+                    {"name": user["NAMA"], "status": "FAILED (Not Available)"}
                 )
                 page.screenshot(
-                    path=f"booking_{user['NAMA']}_TIMEOUT.png", full_page=True
+                    path=f"booking_{user['NAMA']}_UNAVAILABLE.png",
+                    full_page=True,
                 )
 
-        else:
-            print("✖ Room Not Available")
+        except Exception as e:
+            print(f"✖ Terjadi error tak terduga pada user {user['NAMA']}: {e}")
             results.append(
-                {"name": user["NAMA"], "status": "FAILED (Not Available)"}
-            )
-            page.screenshot(
-                path=f"booking_{user['NAMA']}_UNAVAILABLE.png", full_page=True
+                {"name": user["NAMA"], "status": f"FAILED (System Error: {e})"}
             )
 
-        page.close()
+        finally:
+            page.close()
 
     browser.close()
 
@@ -291,22 +298,22 @@ with sync_playwright() as p:
 # =====================================================
 
 print("\n" + "=" * 60)
-print("📊 BOOKING SUMMARY")
+print("📊 RINGKASAN HASIL BOOKING")
 print("=" * 60)
 
-success = 0
-failed = 0
+success_count = 0
+failed_count = 0
 
 for r in results:
-    print(f"{r['status']:<25} {r['name']}")
+    print(f"{r['status']:<35} | {r['name']}")
 
     if r["status"] == "SUCCESS":
-        success += 1
+        success_count += 1
     else:
-        failed += 1
+        failed_count += 1
 
 print("\n" + "-" * 60)
-print(f"Total   : {len(results)}")
-print(f"Success : {success}")
-print(f"Failed  : {failed}")
+print(f"Total Eksekusi : {len(results)}")
+print(f"Berhasil       : {success_count}")
+print(f"Gagal          : {failed_count}")
 print("=" * 60)
