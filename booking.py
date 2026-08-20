@@ -9,14 +9,8 @@ URL = "https://script.google.com/a/macros/banksinarmas.com/s/AKfycbyGVQZaMoU4Q4H
 
 
 # =====================================================
-# RANDOM DELAY FUNCTIONS
+# DELAY FUNCTIONS
 # =====================================================
-
-
-def random_delay(min_sec=2, max_sec=5):
-    delay = random.uniform(min_sec, max_sec)
-    print(f"⏳ Delay {delay:.2f} detik...")
-    time.sleep(delay)
 
 
 def short_delay(min_ms=500, max_ms=1500):
@@ -84,8 +78,6 @@ print("\n📅 Periode Booking Minggu Depan:")
 print(f"   Tanggal Mulai (Senin)  : {START_DATE}")
 print(f"   Tanggal Selesai (Jumat): {END_DATE}\n")
 
-results = []
-
 # =====================================================
 # PLAYWRIGHT AUTOMATION
 # =====================================================
@@ -93,20 +85,21 @@ results = []
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=True)
 
+    total_data = len(booking_data)
+
     for idx, user in enumerate(booking_data, start=1):
         print("\n" + "=" * 60)
-        print(f"[{idx}/{len(booking_data)}] Processing Booking : {user['NAMA']}")
+        print(f"[{idx}/{total_data}] Processing Booking : {user['NAMA']}")
 
         page = browser.new_page()
 
-        # Variabel penampung log alert untuk per-user
+        # Menyimpan SELURUH teks alert murni yang muncul di layar
         captured_dialogs = []
 
-        # Listener global untuk otomatis klik OK pada SETIAP alert agar browser tidak freeze
         def global_dialog_handler(dialog):
-            msg = dialog.message.strip()
-            print(f"🔔 [ALERT DETECTED]: '{msg}'")
-            captured_dialogs.append(msg)
+            raw_msg = dialog.message.strip()
+            print(f"🔔 [ALERT DETECTED]: '{raw_msg}'")
+            captured_dialogs.append(raw_msg)
             dialog.accept()
 
         page.on("dialog", global_dialog_handler)
@@ -115,9 +108,7 @@ with sync_playwright() as p:
             page.goto(URL, wait_until="networkidle")
             page.wait_for_timeout(random.randint(2000, 3000))
 
-            # -------------------------------------------------
-            # 1. CARI FRAME DI GOOGLE APPS SCRIPT
-            # -------------------------------------------------
+            # 1. Cari Frame di Google Apps Script
             frame = None
             for f in page.frames:
                 if f.locator("#nik").count() > 0:
@@ -125,15 +116,10 @@ with sync_playwright() as p:
                     break
 
             if frame is None:
-                print("❌ Form booking tidak ditemukan di dalam frame.")
-                results.append(
-                    {"name": user["NAMA"], "status": "FAILED (Frame Not Found)"}
-                )
+                print("📣 RESPONSE FINAL : ❌ Form booking tidak ditemukan (Frame Error)")
                 continue
 
-            # -------------------------------------------------
-            # 2. INPUT DATA UTAMA
-            # -------------------------------------------------
+            # 2. Input Data Utama
             frame.locator("#nik").fill(user["NIK"])
             short_delay()
 
@@ -147,11 +133,8 @@ with sync_playwright() as p:
             short_delay()
 
             expect(frame.locator("#nik")).to_have_value(user["NIK"])
-            print("✔ Form profil berhasil diisi")
 
-            # -------------------------------------------------
-            # 3. PILIH WORKSITE
-            # -------------------------------------------------
+            # 3. Pilih Worksite
             frame.evaluate(
                 """
                 (site)=>{
@@ -173,9 +156,7 @@ with sync_playwright() as p:
 
             page.wait_for_timeout(1500)
 
-            # -------------------------------------------------
-            # 4. SET TANGGAL (SENIN - JUMAT)
-            # -------------------------------------------------
+            # 4. Set Tanggal (Senin - Jumat)
             frame.evaluate(
                 """
                 (dates)=>{
@@ -203,134 +184,53 @@ with sync_playwright() as p:
 
             page.wait_for_timeout(4000)
 
-            # -------------------------------------------------
-            # 5. CEK STATUS RUANGAN
-            # -------------------------------------------------
+            # 5. Cek Status Ruangan
             status = frame.locator("#statusRuangan").inner_text()
-            print(f"Status Ketersediaan: {status}")
 
-            # -------------------------------------------------
-            # 6. SUBMIT & TUNGGU HINGGA SELESAI (MAX 20 DETIK)
-            # -------------------------------------------------
+            # 6. Submit & Mengambil Teks Asli dari Alert Layar
             if "available" in status.lower():
-                print("✔ Ruangan Tersedia (Available)")
-                random_delay(1, 3)
-
-                # Klik Submit
                 frame.locator("#submit-reservation-detail").click(force=True)
-                print(
-                    "✔ Submit diklik, memantau proses booking (Maksimal 20 detik)..."
-                )
 
-                final_status_found = False
-                final_message = ""
+                raw_final_message = None
 
-                # Polling 20 detik untuk mencari alert/pesan final (bukan 'uploading')
+                # Polling 20 detik untuk menunggu alert final (mengabaikan alert 'uploading/please wait')
                 for _ in range(20):
                     page.wait_for_timeout(1000)
 
-                    # 1. Cek dari daftar alert yang berhasil ditangkap
                     for msg in reversed(captured_dialogs):
                         msg_lower = msg.lower()
                         if (
                             "uploading" not in msg_lower
                             and "please wait" not in msg_lower
                         ):
-                            final_message = msg
-                            final_status_found = True
+                            # Ambil MURNI string asli dari alert layar tanpa diubah
+                            raw_final_message = msg
                             break
 
-                    if final_status_found:
+                    if raw_final_message:
                         break
 
-                    # 2. Cek apakah ada perubahan teks di dalam HTML Frame
-                    frame_html = frame.content().lower()
-                    if (
-                        "succesfully booked" in frame_html
-                        or "successfully booked" in frame_html
-                    ):
-                        final_message = "Location succesfully booked!"
-                        final_status_found = True
-                        break
-
-                # Beri jeda 2 detik ekstra setelah alert hilang agar UI web benar-benar bersih saat di-screenshot
-                page.wait_for_timeout(2000)
-
-                filename = f"booking_{user['NAMA']}.png"
-                page.screenshot(path=filename, full_page=True)
-
-                if final_status_found:
-                    print(
-                        f"💬 RESPONS FINAL: '{final_message}' | Screenshot: {filename}"
-                    )
-                    if (
-                        "succesfully booked" in final_message.lower()
-                        or "successfully booked" in final_message.lower()
-                    ):
-                        print(
-                            f"✔ Booking SUCCESS Verified untuk {user['NAMA']}"
-                        )
-                        results.append(
-                            {"name": user["NAMA"], "status": "SUCCESS"}
-                        )
-                    else:
-                        print(f"✖ Booking Gagal! Respon: '{final_message}'")
-                        results.append(
-                            {
-                                "name": user["NAMA"],
-                                "status": f"FAILED ({final_message})",
-                            }
-                        )
+                if raw_final_message:
+                    print(f"\n📣 RESPONSE FINAL : '{raw_final_message}'")
                 else:
-                    print("✖ Timeout 20 detik! Tidak ada alert status akhir.")
-                    results.append(
-                        {"name": user["NAMA"], "status": "FAILED (Timeout 20s)"}
+                    print(
+                        "\n📣 RESPONSE FINAL : ❌ Timeout 20 detik! Tidak ada alert status akhir dari layar."
                     )
 
             else:
-                print("✖ Ruangan Tidak Tersedia (Not Available)")
-                results.append(
-                    {"name": user["NAMA"], "status": "FAILED (Not Available)"}
-                )
-                page.screenshot(
-                    path=f"booking_{user['NAMA']}_UNAVAILABLE.png",
-                    full_page=True,
-                )
+                print(f"\n📣 RESPONSE FINAL : ❌ Ruangan Tidak Tersedia ({status})")
 
         except Exception as e:
-            print(f"✖ Terjadi error pada user {user['NAMA']}: {e}")
-            results.append(
-                {"name": user["NAMA"], "status": f"FAILED (System Error: {e})"}
-            )
+            print(f"\n📣 RESPONSE FINAL : ❌ System Error: {e}")
 
         finally:
-            # PENTING: Tutup page di 'finally' agar iterasi data berikutnya PASTI berjalan
             page.close()
+
+            # Jeda 10 detik sebelum lanjut ke orang berikutnya (kecuali di data terakhir)
+            if idx < total_data:
+                print("⏳ Menunggu jeda 10 detik sebelum lanjut ke data berikutnya...")
+                time.sleep(10)
 
     browser.close()
 
-
-# =====================================================
-# SUMMARY REPORT
-# =====================================================
-
-print("\n" + "=" * 60)
-print("📊 RINGKASAN HASIL BOOKING")
-print("=" * 60)
-
-success_count = 0
-failed_count = 0
-
-for r in results:
-    print(f"{r['status']:<35} | {r['name']}")
-
-    if r["status"] == "SUCCESS":
-        success_count += 1
-    else:
-        failed_count += 1
-
-print("\n" + "-" * 60)
-print(f"Total Eksekusi : {len(results)}")
-print(f"Berhasil       : {success_count}")
-print(f"Gagal          : {failed_count}")
-print("=" * 60)
+print("\n✨ Seluruh eksekusi selesai!")
