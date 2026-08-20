@@ -85,7 +85,6 @@ results = []
 # =====================================================
 
 with sync_playwright() as p:
-    # Set headless=False jika ingin memantau prosesnya secara visual
     browser = p.chromium.launch(headless=True)
 
     for idx, user in enumerate(booking_data, start=1):
@@ -96,12 +95,13 @@ with sync_playwright() as p:
 
         page = browser.new_page()
 
-        # Variable penampung pesan alert/dialog dari browser
+        # Variable khusus penampung pesan alert/dialog
         last_alert_msg = {"text": ""}
 
+        # Listener untuk menangkap pop-up alert browser
         def handle_dialog(dialog):
-            msg = dialog.message
-            print(f"💬 ALERT POPUP: {msg}")
+            msg = dialog.message.strip()
+            print(f"💬 ALERT DETECTED: '{msg}'")
             last_alert_msg["text"] = msg
             dialog.accept()
 
@@ -206,63 +206,37 @@ with sync_playwright() as p:
         page.wait_for_timeout(random.randint(3000, 5000))
 
         # =================================================
-        # CHECK STATUS & VERIFY SUBMIT
+        # CHECK STATUS & VERIFY STRICT POP-UP
         # =================================================
 
         status = frame.locator("#statusRuangan").inner_text()
         print(f"Status Ruangan: {status}")
 
         if "available" in status.lower():
-            print("✔ Room Available, mengirimkan request...")
+            print("✔ Room Available, menekan tombol submit...")
 
             random_delay(2, 4)
 
             submit_btn = frame.locator("#submit-reservation-detail")
             submit_btn.wait_for(state="visible")
-            submit_btn.click()  # Dihapus force=True untuk memastikan tombol siap
+            submit_btn.click()
 
-            # Menunggu proses AJAX/Apps Script backend selesai
-            page.wait_for_timeout(6000)
+            # Tunggu respons dari backend dan pemunculan alert dialog (maksimal 10 detik)
+            print("⏳ Menunggu pop-up konfirmasi dari server...")
+            page.wait_for_timeout(8000)
 
-            # Verifikasi 1: Berdasarkan pesan pada Dialog Alert
-            alert_text = last_alert_msg["text"].lower()
+            # Strict Check: Teks pop-up harus sesuai persis
+            expected_msg = "Location succesfully booked!"
 
-            # Verifikasi 2: Berdasarkan indikator pesan sukses di UI jika ada
-            toast_text = ""
-            if frame.locator(".toast, #success-message").count() > 0:
-                toast_text = (
-                    frame.locator(".toast, #success-message")
-                    .first.inner_text()
-                    .lower()
-                )
-
-            # Evaluasi keberhasilan
-            if (
-                "berhasil" in alert_text
-                or "success" in alert_text
-                or "berhasil" in toast_text
-                or "success" in toast_text
-            ):
-                print("✔ Booking Success (Verified Backend)")
+            if last_alert_msg["text"] == expected_msg:
+                print("✔ Booking Success (Verified by Alert Pop-Up)")
                 results.append({"name": user["NAMA"], "status": "SUCCESS"})
-            elif (
-                "gagal" in alert_text
-                or "error" in alert_text
-                or "full" in alert_text
-            ):
-                print(
-                    f"✖ Booking Gagal dari Server: {last_alert_msg['text']}"
-                )
-                results.append(
-                    {"name": user["NAMA"], "status": "FAILED (Server Reject)"}
-                )
             else:
-                # Jika tidak ada alert khusus, cek apakah form telah dikirim / di-reset
                 print(
-                    "⚠️ Tidak ada konfirmasi jelas dari server. Menandai sebagai Unverified."
+                    f"✖ Booking Gagal! Alert yang muncul: '{last_alert_msg['text']}'"
                 )
                 results.append(
-                    {"name": user["NAMA"], "status": "FAILED (Unverified)"}
+                    {"name": user["NAMA"], "status": "FAILED (Pop-up Mismatch)"}
                 )
 
         else:
