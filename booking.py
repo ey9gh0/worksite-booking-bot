@@ -195,7 +195,7 @@ with sync_playwright() as p:
         status = frame.locator("#statusRuangan").inner_text()
         print(f"Status: {status}")
 
-        page.wait_for_timeout(random.randint(1000, 2000))
+        page.wait_for_timeout(random.randint(6000, 10000))
 
         # =================================================
         # BOOKING LOGIC
@@ -224,12 +224,12 @@ with sync_playwright() as p:
 
         page.close()
 
-        # Jeda 20 detik sebelum membuka page baru untuk antrean/orang berikutnya
+        # Jeda 15 detik sebelum membuka page baru untuk antrean/orang berikutnya
         if idx < len(booking_data):
             print(
-                "⏳ Menunggu 20 detik sebelum membuka halaman baru untuk orang berikutnya..."
+                "⏳ Menunggu 15 detik sebelum membuka halaman baru untuk orang berikutnya..."
             )
-            time.sleep(20)
+            time.sleep(15)
 
     browser.close()
 
