@@ -201,21 +201,31 @@ with sync_playwright() as p:
             page.wait_for_timeout(random.randint(4000, 7000))
 
             # -------------------------------------------------
-            # 6. LOGIC SUBMIT + DUAL-DETECTION (DIALOG & DOM)
+            # 6. LOGIC SUBMIT + MULTI-ALERT HANDLING (MAX 20 DETIK)
             # -------------------------------------------------
             if "available" in status.lower():
                 print("✔ Ruangan Tersedia (Available)")
                 random_delay(2, 4)
 
-                # Event listener non-blocking untuk menangkap alert browser
-                dialog_captured = {"message": None}
+                dialog_final_message = {"message": None}
 
                 def handle_dialog(dialog):
-                    print(
-                        f"\n🔔 Alert Terdeteksi via Event: '{dialog.message}'"
-                    )
-                    dialog_captured["message"] = dialog.message.strip()
-                    dialog.accept()
+                    msg = dialog.message.strip()
+                    print(f"\n🔔 Alert Terdeteksi: '{msg}'")
+
+                    # Abaikan alert loading ("uploading" / "please wait")
+                    if (
+                        "uploading" in msg.lower()
+                        or "please wait" in msg.lower()
+                    ):
+                        print(
+                            "⏳ Alert loading terdeteksi, mengabaikan dan menunggu alert status akhir..."
+                        )
+                        dialog.accept()
+                    else:
+                        # Tangkap pesan alert final/status akhir
+                        dialog_final_message["message"] = msg
+                        dialog.accept()
 
                 # Pasang listener dialog
                 page.on("dialog", handle_dialog)
@@ -226,43 +236,49 @@ with sync_playwright() as p:
                         force=True
                     )
                     print(
-                        "✔ Submit diklik, memantau respon server (Max 15 detik)..."
+                        "✔ Submit diklik, memantau respon server (Maksimal 20 detik)..."
                     )
 
                     actual_msg = None
 
-                    # Polling 15 detik (Mengecek dialog & DOM secara bersamaan)
-                    for _ in range(15):
+                    # Polling Maksimal 20 Detik (20 x 1 detik)
+                    for _ in range(20):
                         page.wait_for_timeout(1000)
 
-                        # Opsi A: Alert browser berhasil ditangkap listener
-                        if dialog_captured["message"]:
-                            actual_msg = dialog_captured["message"]
+                        # Opsi A: Alert final berhasil ditangkap oleh listener
+                        if dialog_final_message["message"]:
+                            actual_msg = dialog_final_message["message"]
                             break
 
-                        # Opsi B: Pengecekan teks langsung di dalam HTML frame
+                        # Opsi B: Pengecekan teks langsung jika berupa modal HTML di frame
                         frame_html = frame.content().lower()
-                        if "succesfully booked" in frame_html:
+                        if (
+                            "succesfully booked" in frame_html
+                            or "successfully booked" in frame_html
+                        ):
                             actual_msg = "Location succesfully booked!"
                             break
-                        elif "successfully booked" in frame_html:
-                            actual_msg = "Location successfully booked!"
-                            break
-                        elif "already booked" in frame_html:
-                            actual_msg = "Location already booked!"
+                        elif (
+                            "already booked" in frame_html
+                            or "failed" in frame_html
+                        ):
+                            actual_msg = "Booking Failed"
                             break
 
-                    # Lepas listener dialog agar tidak berpengaruh pada iterasi berikutnya
+                    # Lepas listener dialog
                     page.remove_listener("dialog", handle_dialog)
 
-                    # Ambil screenshot
+                    # Beri jeda 1.5 detik setelah alert final ditutup agar tampilan web ter-render sempurna
+                    page.wait_for_timeout(1500)
+
+                    # Ambil Screenshot hasil akhir
                     filename = f"booking_{user['NAMA']}.png"
                     page.screenshot(path=filename, full_page=True)
 
                     # Evaluasi hasil
                     if actual_msg:
                         print(
-                            f"\n💬 RESPONS TERDETEKSI: '{actual_msg}' | Screenshot: {filename}"
+                            f"\n💬 RESPONS FINAL TERDETEKSI: '{actual_msg}' | Screenshot: {filename}"
                         )
                         actual_msg_lower = actual_msg.lower()
 
@@ -288,12 +304,12 @@ with sync_playwright() as p:
                             )
                     else:
                         print(
-                            "✖ Timeout! Tidak ada alert maupun respons teks yang terdeteksi di frame."
+                            "✖ Timeout 20 detik! Alert final tidak kunjung muncul."
                         )
                         results.append(
                             {
                                 "name": user["NAMA"],
-                                "status": "FAILED (No Response/Timeout)",
+                                "status": "FAILED (Timeout 20s)",
                             }
                         )
 
