@@ -1,9 +1,9 @@
 name: Auto Booking Worksite
 
 on:
-  schedule:
-    # Berjalan setiap hari Jumat jam 08:00 WIB (01:00 UTC)
-    - cron: '0 1 * * 5'
+#  schedule:
+#    # Berjalan setiap hari Jumat jam 08:00 WIB (01:00 UTC)
+#    - cron: '0 1 * * 5'
   workflow_dispatch: # Tombol jalankan manual via GitHub Actions UI
 
 jobs:
